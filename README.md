@@ -453,6 +453,19 @@ public class SelectSort {
 3.命名服务
 
 全局id
+
+## 原子操作
+
+![img](README.assets/企业微信截图_15928841848073.png)
+
+每个节点都有版本号，所以原子操作是通过CAS,当然也可以加锁，如果是加锁version就是-1
+
+## Watcher
+
+![img](README.assets/企业微信截图_15928844214716.png)
+
+
+
 # 操作系统
 
 ## 死锁
@@ -486,6 +499,7 @@ public class SelectSort {
  
 
 
+
                 1，面向字节流，
     
                 2，生命周期随内核
@@ -495,6 +509,7 @@ public class SelectSort {
                 4，半双工，单向通信，两个管道实现双向通信。
 
  
+
 
 2，消息队列
 
@@ -655,6 +670,10 @@ public enum Singleton{
 
 # Java
 
+## 集合方法使用
+
+https://www.liaoxuefeng.com/wiki/1252599548343744/1265112034799552
+
 ## 线程池
 
 ### 线程池数量
@@ -739,3 +758,153 @@ MySQL根据优化器生成的执行计划，再调用存储引擎的API来执行
 链接：https://juejin.im/post/5b7036de6fb9a009c40997eb
 来源：掘金
 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+# Spring
+
+## 初始化
+
+IOC容器的初始化分为三个过程实现：
+第一个过程是Resource资源定位。这个Resouce指的是BeanDefinition的资源定位。这个过程就是容器找数据的过程，就像水桶装水需要先找到水一样。
+第二个过程是BeanDefinition的载入过程。这个载入过程是把用户定义好的Bean表示成Ioc容器内部的数据结构，而这个容器内部的数据结构就是BeanDefition。
+第三个过程是向IOC容器注册这些BeanDefinition的过程，这个过程就是将前面的BeanDefition保存到HashMap中的过程。
+ BeanDefinition:
+SpringIOC 容器管理了我们定义的各种 Bean 对象及其相互的关系，Bean 对象在 Spring 实现中是以 BeanDefinition 来描述的。
+BeanDefinition定义了Bean的数据结构，用来存储Bean。
+Bean 的解析过程非常复杂，Bean 的解析主要就是对 Spring 配置文件的解析,使用BeanDefinitionReader对资源文件进行解析。
+
+一：Resource定位
+想要构建BeanDefinition，需要先找到配置文件，也就是通常所说的applicationContetx.xml等配置文件
+二：BeanDefinition载入
+找到资源文件之后，后面的就是解析这个文件并将其转化为容器支持的BeanDifination结构，可以分为一下三步：
+1.构造一个BeanFactory,也就是IOC容器
+2.调用XML解析器得到document对象   XmlBeanDefinitionReader
+3.按照Spring的规则解析document对象为容器支持的BeanDefition类型
+三：向IOC容器注册BeanDefition
+在IOC容器中有一个map，用于存放所有的BeanDefinition，方便容器对Bean进行管理
+
+
+
+先找到资源配置文件，然后使用BeanDefinationReader对配置文件进行解析得到容器支持的BeanDefination结构，最后把解析完成的所有的BeanDefination放入容器的一个map容器中便于容器对bean进行统一的管理
+
+Spring ioc容器实例化Bean有几种方式：singleton   prototype  request  session  globalSession
+主要用到的是：singleton：单例，IOC容器之中有且仅有一个Bean实例  prototype：每次从bean容器中调用bean时，都返回一个新的实例，IOC容器默认为singleton
+
+
+
+
+
+# 算法
+
+## LRU
+
+```
+// 继承LinkedHashMap
+    public class LRUCache<K, V> extends LinkedHashMap<K, V> {
+        private final int MAX_CACHE_SIZE;
+
+        public LRUCache(int cacheSize) {
+            // 使用构造方法 public LinkedHashMap(int initialCapacity, float loadFactor, boolean accessOrder)
+            // initialCapacity、loadFactor都不重要
+            // accessOrder要设置为true，按访问排序
+            super((int) Math.ceil(cacheSize / 0.75) + 1, 0.75f, true);
+            MAX_CACHE_SIZE = cacheSize;
+        }
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry eldest) {
+            // 超过阈值时返回true，进行LRU淘汰
+            return size() > MAX_CACHE_SIZE;
+        }
+
+    }
+```
+
+
+
+```
+public class LRUCache {
+    class DLinkedNode {
+        int key;
+        int value;
+        DLinkedNode prev;
+        DLinkedNode next;
+        public DLinkedNode() {}
+        public DLinkedNode(int _key, int _value) {key = _key; value = _value;}
+    }
+
+    private Map<Integer, DLinkedNode> cache = new HashMap<Integer, DLinkedNode>();
+    private int size;
+    private int capacity;
+    private DLinkedNode head, tail;
+
+    public LRUCache(int capacity) {
+        this.size = 0;
+        this.capacity = capacity;
+        // 使用伪头部和伪尾部节点
+        head = new DLinkedNode();
+        tail = new DLinkedNode();
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    public int get(int key) {
+        DLinkedNode node = cache.get(key);
+        if (node == null) {
+            return -1;
+        }
+        // 如果 key 存在，先通过哈希表定位，再移到头部
+        moveToHead(node);
+        return node.value;
+    }
+
+    public void put(int key, int value) {
+        DLinkedNode node = cache.get(key);
+        if (node == null) {
+            // 如果 key 不存在，创建一个新的节点
+            DLinkedNode newNode = new DLinkedNode(key, value);
+            // 添加进哈希表
+            cache.put(key, newNode);
+            // 添加至双向链表的头部
+            addToHead(newNode);
+            ++size;
+            if (size > capacity) {
+                // 如果超出容量，删除双向链表的尾部节点
+                DLinkedNode tail = removeTail();
+                // 删除哈希表中对应的项
+                cache.remove(tail.key);
+                --size;
+            }
+        }
+        else {
+            // 如果 key 存在，先通过哈希表定位，再修改 value，并移到头部
+            node.value = value;
+            moveToHead(node);
+        }
+    }
+
+    private void addToHead(DLinkedNode node) {
+        node.prev = head;
+        node.next = head.next;
+        head.next.prev = node;
+        head.next = node;
+    }
+
+    private void removeNode(DLinkedNode node) {
+        node.prev.next = node.next;
+        node.next.prev = node.prev;
+    }
+
+    private void moveToHead(DLinkedNode node) {
+        removeNode(node);
+        addToHead(node);
+    }
+
+    private DLinkedNode removeTail() {
+        DLinkedNode res = tail.prev;
+        removeNode(res);
+        return res;
+    }
+}
+
+```
+
