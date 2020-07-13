@@ -1054,6 +1054,50 @@ JVM中的Class只有满足以下三个条件，才能被GC回收，也就是该C
 版权声明：本文为CSDN博主「田潇文」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
 原文链接：https://blog.csdn.net/weixin_44259720/article/details/87009843
 
+## Arrays.asList为什么不能增加或者修改
+
+1.返回的是内部类，而内部类对元素的定义是final
+
+```
+private final E[] a;
+```
+
+2.Arrays继承了AbstractList<E>，而在AbstractList中U对add方法天然就会抛出异常“throw new UnsupportedOperationException();”，平时我们使用的都是ArrayList的add方法，它是进行了重写；
+
+## Random在高并发下的缺陷以及JUC对其的优化
+
+    protected int next(int bits) {
+        long oldseed, nextseed;//定义旧种子，下一个种子
+        AtomicLong seed = this.seed;
+        do {
+            oldseed = seed.get();//获得旧的种子值，赋值给oldseed 
+            nextseed = (oldseed * multiplier + addend) & mask;//一个神秘的算法
+        } while (!seed.compareAndSet(oldseed, nextseed));//CAS，如果seed的值还是为oldseed，就用nextseed替换掉，并且返回true，退出while循环，如果已经不为oldseed了，就返回false，继续循环
+        return (int)(nextseed >>> (48 - bits));//一个神秘的算法
+    }
+
+
+定义了旧种子oldseed，下一个种子（新种子）nextseed。
+
+获得旧的种子的值，赋值给oldseed 。
+
+一个神秘的算法，计算出下一个种子（新种子）赋值给nextseed。
+
+使用CAS操作，如果seed的值还是oldseed，就用nextseed替换掉，并且返回true，！true为false，退出while循环；如果seed的值已经不为oldseed了，就说明seed的值已经被替换过了，返回false，！false为true，继续下一次while循环。
+
+一个神秘的算法，根据nextseed计算出随机数，并且返回。
+
+作者：CoderBear
+链接：https://juejin.im/post/5cbc1e3bf265da039d32819c
+来源：掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+CAS会有竞争
+
+优化：
+
+ThreadLocalRandom中，把probe和seed设置到当前的线程，这样其他线程就拿不到了。
+
 # Mysql
 
 ## SQL语句执行过程
