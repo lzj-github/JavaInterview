@@ -165,7 +165,7 @@ https://juejin.im/entry/58d7635e5c497d0057fae036
 
 　**1**.根据HTTP规范，GET用于信息获取，而且应该是安全的和幂等的。
 
-​	　**2**.根据HTTP规范，POST表示可能修改变服务器上的资源的请求。
+​	**2**.根据HTTP规范，POST表示可能修改变服务器上的资源的请求。
 
 HTTP 并未规定不可以 GET 中发送 Body 内容，但却不少知名的工具不能用 GET 发送 Body 数据，所以大致的讲我们仍然不推荐使用 GET 携带 Body 内容，还有可能某些应用服务器也会忽略掉 GET 的 Body 数据
 
@@ -235,7 +235,25 @@ Reactor模式
 
 5、使用底层模型不同，它们之间底层实现方式以及与客户端之间通信的应用协议不一样，Redis直接自己构建了VM 机制 ，因为一般的系统调用系统函数的话，会浪费一定的时间去移动和请求；
 
+## 缓存一致性
 
+延时双删
+
+在写库前后都进行redis.del(key)操作，并且设定合理的超时时间。具体步骤是：
+
+1）先删除缓存
+
+2）再写数据库
+
+3）休眠500毫秒（根据具体的业务时间来定）
+
+4）再次删除缓存。
+
+**那么，这个500毫秒怎么确定的，具体该休眠多久呢？**
+
+需要评估自己的项目的读数据业务逻辑的耗时。这么做的目的，就是确保读请求结束，写请求可以删除读请求造成的缓存脏数据。
+
+当然，这种策略还要考虑 redis 和数据库主从同步的耗时。最后的写数据的休眠时间：则在读数据业务逻辑的耗时的基础上，加上几百ms即可。比如：休眠1秒。
 
 
 # MyBatis
@@ -680,7 +698,7 @@ https://blog.csdn.net/muxiqingyang/article/details/6615199
 
 包含关系：没有线程的进程可以看做是单线程的，如果一个进程内有多个线程，则执行过程不是一条线的，而是多条线（线程）共同完成的；线程是进程的一部分，所以线程也被称为轻权进程或者轻量级进程。
 
-
+https://juejin.im/post/5d5df6b35188252ae10bdf42#comment
 
 ## Linux 系统启动过程
 
@@ -1311,6 +1329,12 @@ MySQL通过**两阶段提交**来保证`redo log`和`binlog`的数据是一致�
 
 4把写操作指向新的主库
 
+## Mvcc和next-key lock为什么不能完全解决幻读
+
+https://blog.csdn.net/weixin_42907817/article/details/107121470
+
+
+
 # Spring
 
 ## 初始化
@@ -1354,6 +1378,12 @@ Spring ioc容器实例化Bean有几种方式：singleton   prototype  request  s
 https://www.jianshu.com/p/9ea61d204559
 
 ![img](README.assets/460263-74d88a767a80843a.webp)
+
+## springMVC
+
+https://www.jianshu.com/p/8a20c547e245
+
+![5B8B0737-C47F-4D0B-AD98-3E23EBDB8DBB](README.assets/5B8B0737-C47F-4D0B-AD98-3E23EBDB8DBB.png)
 
 
 
@@ -2143,13 +2173,19 @@ https://www.bilibili.com/video/BV19t4y1X7D3?from=search&seid=1460097810829895205
 
 答案：倒推就行了，只要谁拿到了n+1是3的倍数，就必赢。必赢序列 29， 26， 23， 20， 17 ，14 ，11， 8， 5， 2。只要任意一个人命中这个序列，按照这个顺序走就行了。按照题意，A先出0，B足够聪明的话，A必输。
 
+## 赛马问题
 
+https://zhuanlan.zhihu.com/p/103572219
 
 # 情景题
 
 ## 二维码扫描登录原理
 
 https://juejin.im/post/5e83e716e51d4546c27bb559#comment
+
+## 设计一个第三方账号登陆
+
+https://juejin.im/post/5dbd9c5af265da4d3a52e4a2#comment
 
 
 
