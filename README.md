@@ -219,6 +219,71 @@ IP Hash法：根据请求IP的Hash值分配机器
 - fair：第三方工具，相比于前两者，考虑响应时间、页面大小智能做负载均衡。
 - url hash法：按照请求url的hash值分配机器，可有效利用缓存。
 
+## WebSocket
+
+https://zhuanlan.zhihu.com/p/161661750
+
+首先 WebSocket 是基于 HTTP 协议的，或者说借用了 HTTP 协议来完成一部分握手。
+
+首先我们来看个典型的 WebSocket 握手
+
+```text
+GET /chat HTTP/1.1
+Host: server.example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==
+Sec-WebSocket-Protocol: chat, superchat
+Sec-WebSocket-Version: 13
+Origin: http://example.com
+```
+
+熟悉 HTTP 的童鞋可能发现了，这段类似 HTTP 协议的握手请求中，多了这么几个东西。
+
+```text
+Upgrade: websocket
+Connection: Upgrade
+```
+
+这个就是 WebSocket 的核心了，告诉 Apache 、 Nginx 等服务器：注意啦，我发起的请求要用 WebSocket 协议，快点帮我找到对应的助理处理~而不是那个老土的 HTTP。
+
+```text
+Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==
+Sec-WebSocket-Protocol: chat, superchat
+Sec-WebSocket-Version: 13
+```
+
+首先， Sec-WebSocket-Key 是一个 Base64 encode 的值，这个是浏览器随机生成的，告诉服务器：泥煤，不要忽悠我，我要验证你是不是真的是 WebSocket 助理。
+
+然后， Sec_WebSocket-Protocol 是一个用户定义的字符串，用来区分同 URL 下，不同的服务所需要的协议。简单理解：今晚我要服务A，别搞错啦~
+
+最后， Sec-WebSocket-Version 是告诉服务器所使用的 WebSocket Draft （协议版本），在最初的时候，WebSocket 协议还在 Draft 阶段，各种奇奇怪怪的协议都有，而且还有很多期奇奇怪怪不同的东西，什么 Firefox 和 Chrome 用的不是一个版本之类的，当初 WebSocket 协议太多可是一个大难题。。不过现在还好，已经定下来啦~大家都使用同一个版本：服务员，我要的是13岁的噢→_→
+
+然后服务器会返回下列东西，表示已经接受到请求， 成功建立 WebSocket 啦！
+
+```text
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=
+Sec-WebSocket-Protocol: chat
+```
+
+这里开始就是 HTTP 最后负责的区域了，告诉客户，我已经成功切换协议啦~
+
+```text
+Upgrade: websocket
+Connection: Upgrade
+```
+
+依然是固定的，告诉客户端即将升级的是 WebSocket 协议，而不是 mozillasocket，lurnarsocket 或者 shitsocket。
+
+然后， Sec-WebSocket-Accept 这个则是经过服务器确认，并且加密过后的 Sec-WebSocket-Key 。服务器：好啦好啦，知道啦，给你看我的 ID CARD 来证明行了吧。
+
+后面的， Sec-WebSocket-Protocol 则是表示最终使用的协议。
+
+至此，HTTP 已经完成它所有工作了，接下来就是完全按照 WebSocket 协议进行了。
+
 
 
 # Redis
@@ -800,6 +865,8 @@ https://juejin.im/post/5d5df6b35188252ae10bdf42#comment
 
 ![image-20200726144739341](README.assets/image-20200726144739341.png)
 
+进程和线程的主要差异在内存数据共享模式不同，切换更轻量
+
 ## Linux 系统启动过程
 
 https://www.runoob.com/linux/linux-system-boot.html
@@ -934,6 +1001,15 @@ public enum Singleton{
 
 # Java
 
+## Java 为什么是高效的?
+
+因为 Java 使用 Just-In-Time (即时) 编译器.
+把java字节码直接转换成可以直接发送给处理器的指令的程序
+
+## NIO
+
+Java NIO适合于处理大量链接的场景，因为他能够实现线程与链接解绑，从而减少了处理io中的线程数。
+
 ## String类不可变性的好处
 
 1. 只有当字符串是不可变的，字符串池才有可能实现。字符串池的实现可以在运行时节约很多heap空间，因为不同的字符串变量都指向池中的同一个字符串。但如果字符串是可变的，那么String interning将不能实现([String interning](https://link.zhihu.com/?target=http%3A//en.wikipedia.org/wiki/String_interning)是指对不同的字符串仅仅只保存一个，即不会保存多个相同的字符串)，因为这样的话，如果变量改变了它的值，那么其它指向这个值的变量的值也会一起改变。
@@ -1037,6 +1113,13 @@ https://www.jianshu.com/p/f6730d5784ad
 ### 线程池数量
 
 最佳线程数目 = （（线程等待时间+线程CPU时间）/线程CPU时间 ）* CPU数目
+
+### 四种线程池拒绝策略
+
+ThreadPoolExecutor.AbortPolicy:丢弃任务并抛出RejectedExecutionException异常。
+ThreadPoolExecutor.DiscardPolicy：丢弃任务，但是不抛出异常。
+ThreadPoolExecutor.DiscardOldestPolicy：丢弃队列最前面的任务，然后重新提交被拒绝的任务
+ThreadPoolExecutor.CallerRunsPolicy：由调用线程（提交任务的线程）处理该任务
 
 ## Full GC的触发条件
 
@@ -1410,6 +1493,10 @@ Core1和Core2可能会同时把主存中某个位置的值Load到自己的L1 Cac
 
 2空循环
 
+**库存减减案例：**比如有个库存是AtomicInteger类型，当只有一个线程去对他做减减的时候最快（即使机器有多个核），**线程越多库存减到0需要的时间越长**，但是CPU的利用率基本一直在100%，这是典型的浪费，花了更多的CPU只做了同样的事情（乐观锁不乐观）
+
+​     如果是synchronized 来对库存加锁减减， 并发减库存的线程数量多少对整个库存减到0所需要的时间没有影响，线程再多CPU一般也跑不满（大概50%），系统能看到cs明显比CAS的情况高很多
+
 3ABA问题
 
 ## CGLIB和JDK
@@ -1473,6 +1560,8 @@ GC(垃圾回收/garbage collector)也不是完美的，缺点就是如果会在�
 2.递归
 
 3.线程太多
+
+
 
 # Mysql
 
@@ -1864,7 +1953,19 @@ alter table person add index city_user(city, name);
 
 可能有朋友说，数据库在高并发下的能力有瓶颈，我公司有钱，加CPU、换固态硬盘、继续买服务器加数据库做分库不就好了，问题是这是一种性价比非常低的方式，花1000万达到的效果，换其他方式可能100万就达到了，不考虑人员、服务器投入产出比的Leader就是个不合格的Leader，且关系型数据库的方式，受限于它本身的特点，可能花了钱都未必能达到想要的效果。至于什么是花100万就能达到花1000万效果的方式呢？可以继续往下看，这就是我们要说的NoSql。
 
- 
+## MySQL中有一条SQL比较慢
+
+回答Pass标准：
+
+\1. 先看explain sql， 看看SQL的执行计划。
+
+\2. 执行计划中重点关注，走到了哪个索引，如果没有索引，则建立索引
+
+ 原因，好的索引可以减少查找全表的数据遍历。
+
+\3. 额外能够回答出：关注临时表创建，关注回表，关注索引覆盖，关注驱动表之中的最少一个。 
+
+
 
 # Spring
 
