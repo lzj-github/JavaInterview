@@ -284,7 +284,61 @@ Connection: Upgrade
 
 至此，HTTP 已经完成它所有工作了，接下来就是完全按照 WebSocket 协议进行了。
 
+## ping工作原理
 
+**1）**假设有两个主机，主机A（192.168.0.1）和主机B（192.168.0.2），现在我们要监测主机A和主机B之间网络是否可达，那么我们在主机A上输入命令：ping 192.168.0.2；
+
+**2）**此时，ping命令会在主机A上构建一个 ICMP的请求数据包（数据包里的内容后面再详述），然后 ICMP协议会将这个数据包以及目标IP（192.168.0.2）等信息一同交给IP层协议；
+
+**3）**IP层协议得到这些信息后，将源地址（即本机IP）、目标地址（即目标IP：192.168.0.2）、再加上一些其它的控制信息，构建成一个IP数据包；
+
+**4）**IP数据包构建完成后，还不够，还需要加上MAC地址，因此，还需要通过ARP映射表找出目标IP所对应的MAC地址。当拿到了目标主机的MAC地址和本机MAC后，一并交给数据链路层，组装成一个数据帧，依据以太网的介质访问规则，将它们传送出出去；
+
+**5）**当主机B收到这个数据帧之后，会首先检查它的目标MAC地址是不是本机，如果是就接收下来处理，接收之后会检查这个数据帧，将数据帧中的IP数据包取出来，交给本机的IP层协议，然后IP层协议检查完之后，再将ICMP数据包取出来交给ICMP协议处理，当这一步也处理完成之后，就会构建一个ICMP应答数据包，回发给主机A；
+
+**6）**在一定的时间内，如果主机A收到了应答包，则说明它与主机B之间网络可达，如果没有收到，则说明网络不可达。除了监测是否可达以外，还可以利用应答时间和发起时间之间的差值，计算出数据包的延迟耗时。
+
+## 线程同步机制
+
+![image-20200803203736671](README.assets/image-20200803203736671.png)
+
+3. #用信号量实现阻塞队列)
+
+## SYN Flood
+
+TCP首包丢弃方案，利用TCP协议的重传机制识别正常用户和攻击报文。当防御设备接到一个IP地址的SYN报文后，简单比对该IP是否存在于白名单中，存在则转发到后端。如不存在于白名单中，检查是否是该IP在一定时间段内的首次SYN报文，不是则检查是否重传报文，是重传则转发并加入白名单，不是则丢弃并加入黑名单。是首次SYN报文则丢弃并等待一段时间以试图接受该IP的SYN重传报文，等待超时则判定为攻击报文加入黑名单。
+
+作者：知乎用户
+链接：https://www.zhihu.com/question/26741164/answer/52776074
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+**黑名单**
+
+面对火锅店里面的流氓，我一怒之下将他们拍照入档，并禁止他们踏入店铺，但是有的时候遇到长得像的人也会禁止他进入店铺。这个就是设置黑名单，此方法秉承的就是“错杀一千，也不放一百”的原则，会封锁正常流量，影响到正常业务。
+
+**DDoS 清洗**
+
+DDos 清洗，就是我发现客人进店几分钟以后，但是一直不点餐，我就把他踢出店里。
+
+DDoS 清洗会对用户请求数据进行实时监控，及时发现DOS攻击等异常流量，在不影响正常业务开展的情况下清洗掉这些异常流量。
+
+**[CDN 加速](https://link.zhihu.com/?target=https%3A//www.upyun.com/products/cdn%3Futm_source%3Dzhihu%26utm_medium%3Dreferral%26utm_campaign%3D386244476%26utm_term%3Dddos)**
+
+CDN 加速，我们可以这么理解：为了减少流氓骚扰，我干脆将火锅店开到了线上，承接外卖服务，这样流氓找不到店在哪里，也耍不来流氓了。
+
+
+
+作者：又拍云
+链接：https://www.zhihu.com/question/22259175/answer/386244476
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+## 使用UDP发送大文件，需要注意什么？
+
+1. 需要在客户端对发送的我呢见进行编码
+2. 服务端接收到发送的数据后根据客户端的数据编码进行排序
+3. 发送数据时采用较小的数据块，数据块如果太大会造成服务端网卡中的缓存太大，丢失问题
 
 # Redis
 
@@ -400,6 +454,32 @@ redis是基于内存的单线程，在操作不当的情况（比如删除大key
 
 修改配置文件，进行重启，将硬盘中的数据加载进内存，时间比较久。在这个过程中，redis不能提供服务。
 
+## Redis的内存淘汰
+
+既然可以设置Redis最大占用内存大小，那么配置的内存就有用完的时候。那在内存用完的时候，还继续往Redis里面添加数据不就没内存可用了吗？
+
+实际上Redis定义了几种策略用来处理这种情况：
+
+**noeviction(默认策略)**：对于写请求不再提供服务，直接返回错误（DEL请求和部分特殊请求除外）
+
+**allkeys-lru**：从所有key中使用LRU算法进行淘汰
+
+**volatile-lru**：从设置了过期时间的key中使用LRU算法进行淘汰
+
+**allkeys-random**：从所有key中随机淘汰数据
+
+**volatile-random**：从设置了过期时间的key中随机淘汰
+
+**volatile-ttl**：在设置了过期时间的key中，根据key的过期时间进行淘汰，越早过期的越优先被淘汰
+
+> 当使用**volatile-lru**、**volatile-random**、**volatile-ttl**这三种策略时，如果没有key可以被淘汰，则和**noeviction**一样返回错误
+
+
+作者：千山qianshan
+链接：https://juejin.im/post/6844903927037558792
+来源：掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
 # MyBatis
 
 ## 一二级缓存
@@ -470,6 +550,20 @@ public class BubbleSort {
 
 ```
 
+### 冒泡排序优点
+
+1.时间复杂度
+
+当数组是有序时，那么它只要遍历它一次即可，所以最好时间复杂度是O(n)；如果数据是逆序时，这时就是最坏时间复杂度O(n^2)
+
+2.空间复杂度
+
+由于冒泡排序只需要常量级的临时空间，所以空间复杂度为O(1)，是一个原地排序算法。
+
+3.稳定性
+
+在冒泡排序中，只有当两个元素不满足条件的时候才会需要交换，所以只有后一个元素大于前一个元素时才进行交换，这时的冒泡排序是一个稳定的排序算法。
+
 ### 快速排序
 
 ```
@@ -522,6 +616,22 @@ public class QuickSort {
 }
 
 ```
+
+### 快速排序优化
+
+https://blog.csdn.net/hacker00011000/article/details/48252131
+
+**插值查找算法**
+
+插值查找算法对二分查找算法的改进主要体现在mid的计算上，其计算公式如下：
+
+![这里写图片描述](README.assets/20160817163443950.png)
+
+而原来的二分查找公式是这样的：
+
+![这里写图片描述](README.assets/20160817163517638.png)
+
+
 
 ### 直接插入排序
 
@@ -666,6 +776,22 @@ https://juejin.im/entry/59cf56a26fb9a00a4a4ceb64
 # 操作系统
 
 
+
+## 信号量
+
+https://juejin.im/post/6844903822465187847
+
+![image-20200803204944660](README.assets/image-20200803204944660.png)
+
+那么信号量可以用来干什么呢？
+
+1. 信号量似乎天生就是为限流而生的，我们可以很容易用信号量实现一个[限流器](#用信号量限流)。
+2. 信号量可以用来实现[互斥锁](#用信号量实现互斥锁)，初始化信号量`S = 1`，这样就只能有一个线程能访问临界区。很明显这是一个不可重入的锁。
+3. 信号量甚至能够实现条件变量，比如[阻塞队列](
+
+## top命令
+
+https://www.cnblogs.com/ggjucheng/archive/2012/01/08/2316399.html
 
 ## 死锁
 
@@ -899,6 +1025,159 @@ https://mp.weixin.qq.com/s?__biz=Mzg3MjA4MTExMw==&mid=2247484746&idx=1&sn=c0a7f9
 2. 异常：如果当前进程运行在用户态，如果这个时候发生了异常事件，就会触发切换。例如：缺页异常。
 3. 外设中断：当外设完成用户的请求时，会向CPU发送中断信号。
 
+## 什么是 CPU 上下文切换
+
+https://zhuanlan.zhihu.com/p/52845869
+
+就是先把前一个任务的 CPU 上下文（也就是 CPU 寄存器和程序计数器）保存起来，然后加载新任务的上下文到这些寄存器和程序计数器，最后再跳转到程序计数器所指的新位置，运行新任务。
+
+而这些保存下来的上下文，会存储在系统内核中，并在任务重新调度执行时再次加载进来。这样就能保证任务原来的状态不受影响，让任务看起来还是连续运行。
+
+## CPU 上下文切换的类型
+
+根据任务的不同，可以分为以下三种类型 - 进程上下文切换 - 线程上下文切换 - 中断上下文切换
+
+## 系统调用
+
+从用户态到内核态的转变，需要通过**系统调用**来完成。比如，当我们查看文件内容时，就需要多次系统调用来完成：首先调用 open() 打开文件，然后调用 read() 读取文件内容，并调用 write() 将内容写到标准输出，最后再调用 close() 关闭文件。
+
+在这个过程中就发生了 CPU 上下文切换，整个过程是这样的：
+1、保存 CPU 寄存器里原来用户态的指令位
+2、为了执行内核态代码，CPU 寄存器需要更新为内核态指令的新位置。
+3、跳转到内核态运行内核任务。
+4、当系统调用结束后，CPU 寄存器需要恢复原来保存的用户态，然后再切换到用户空间，继续运行进程。
+
+所以，**一次系统调用的过程，其实是发生了两次 CPU 上下文切换**。（用户态-内核态-用户态）
+
+不过，需要注意的是，**系统调用过程中，并不会涉及到虚拟内存等进程用户态的资源，也不会切换进程**。这跟我们通常所说的进程上下文切换是不一样的：**进程上下文切换，是指从一个进程切换到另一个进程运行；而系统调用过程中一直是同一个进程在运行。**
+
+所以，**系统调用过程通常称为特权模式切换，而不是上下文切换。系统调用属于同进程内的 CPU 上下文切换**。但实际上，系统调用过程中，CPU 的上下文切换还是无法避免的。
+
+## IO多路复用select/poll/epoll
+
+https://www.bilibili.com/video/BV1qJ411w7du?from=search&seid=4343876570196268087
+
+select
+
+```
+
+ 
+int main()
+{
+  char buffer[MAXBUF];
+  int fds[5];
+  struct sockaddr_in addr;
+  struct sockaddr_in client;
+  int addrlen, n,i,max=0;;
+  int sockfd, commfd;
+  fd_set rset;
+  for(i=0;i<5;i++)
+  {
+  	if(fork() == 0)
+  	{
+  		child_process();
+  		exit(0);
+  	}
+  }
+ 
+  sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  memset(&addr, 0, sizeof (addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(2000);
+  addr.sin_addr.s_addr = INADDR_ANY;
+  bind(sockfd,(struct sockaddr*)&addr ,sizeof(addr));
+  listen (sockfd, 5); 
+ 
+  for (i=0;i<5;i++) 
+  {
+    memset(&client, 0, sizeof (client));
+    addrlen = sizeof(client);
+    fds[i] = accept(sockfd,(struct sockaddr*)&client, &addrlen);
+    if(fds[i] > max)
+    	max = fds[i];
+  }
+  
+  while(1){
+	FD_ZERO(&rset);
+  	for (i = 0; i< 5; i++ ) {
+  		FD_SET(fds[i],&rset);
+  	}
+ 
+   	puts("round again");
+	select(max+1, &rset, NULL, NULL, NULL);
+ 
+	for(i=0;i<5;i++) {
+		if (FD_ISSET(fds[i], &rset)){
+			memset(buffer,0,MAXBUF);
+			read(fds[i], buffer, MAXBUF);
+			puts(buffer);
+		}
+	}	
+  }
+  return 0;
+}
+```
+
+fd_set 使用数组实现
+1.fd_size 有限制 1024 bitmap
+fd【i】 = accept()
+2.fdset不可重用，新的fd进来，重新创建
+3.用户态和内核态拷贝产生开销
+4.O(n)时间复杂度的轮询
+成功调用返回结果大于 0，出错返回结果为 -1，超时返回结果为 0
+具有超时时间
+
+poll基于结构体存储fd
+struct pollfd{
+int fd;
+short events;
+short revents; //可重用
+}
+解决了select的1,2两点缺点
+
+epoll
+
+```
+  struct epoll_event events[5];
+  int epfd = epoll_create(10);
+  ...
+  ...
+  for (i=0;i<5;i++) 
+  {
+    static struct epoll_event ev;
+    memset(&client, 0, sizeof (client));
+    addrlen = sizeof(client);
+    ev.data.fd = accept(sockfd,(struct sockaddr*)&client, &addrlen);
+    ev.events = EPOLLIN;
+    epoll_ctl(epfd, EPOLL_CTL_ADD, ev.data.fd, &ev); 
+  }
+  
+  while(1){
+  	puts("round again");
+  	nfds = epoll_wait(epfd, events, 5, 10000);
+	
+	for(i=0;i<nfds;i++) {
+			memset(buffer,0,MAXBUF);
+			read(events[i].data.fd, buffer, MAXBUF);
+			puts(buffer);
+	}
+  }
+```
+
+解决select的1，2，3，4
+不需要轮询，时间复杂度为O(1)
+epoll_create 创建一个白板 存放fd_events
+epoll_ctl 用于向内核注册新的描述符或者是改变某个文件描述符的状态。已注册的描述符在内核中会被维护在一棵红黑树上
+epoll_wait 通过回调函数内核会将 I/O 准备好的描述符加入到一个链表中管理，进程调用 epoll_wait() 便可以得到事件完成的描述符
+
+两种触发模式：
+LT:水平触发
+当 epoll_wait() 检测到描述符事件到达时，将此事件通知进程，进程可以不立即处理该事件，下次调用 epoll_wait() 会再次通知进程。是默认的一种模式，并且同时支持 Blocking 和 No-Blocking。
+ET:边缘触发
+和 LT 模式不同的是，通知之后进程必须立即处理事件。
+下次再调用 epoll_wait() 时不会再得到事件到达的通知。很大程度上减少了 epoll 事件被重复触发的次数，
+因此效率要比 LT 模式高。只支持 No-Blocking，以避免由于一个文件句柄的阻塞读/阻塞写操作把处理多个文件描述符的任务饿死。
+
 # 设计模式
 
 ## 单例模式
@@ -1000,6 +1279,52 @@ public enum Singleton{
 
 
 # Java
+
+## 创建线程的三种方式的对比
+
+1、采用实现Runnable、Callable接口的方式创建多线程
+
+```
+  优势：
+
+   线程类只是实现了Runnable接口或Callable接口，还可以继承其他类。
+
+   在这种方式下，多个线程可以共享同一个target对象，所以非常适合多个相同线程来处理同一份资源的情况，从而可以将CPU、代码和数据分开，形成清晰的模型，较好地体现了面向对象的思想。
+
+   劣势：
+
+ 编程稍微复杂，如果要访问当前线程，则必须使用Thread.currentThread()方法。
+```
+
+2、使用继承Thread类的方式创建多线程
+
+```
+  优势：
+
+  编写简单，如果需要访问当前线程，则无需使用Thread.currentThread()方法，直接使用this即可获得当前线程。
+
+  劣势：
+
+  线程类已经继承了Thread类，所以不能再继承其他父类。
+```
+
+
+
+## 类加载过程
+
+![image-20200804170600730](README.assets/image-20200804170600730.png)
+
+“加载”(Loading)阶段是整个“类加载”(Class Loading)过程中的一个阶段，
+
+Java虚拟机需要完成以下三件事情:
+
+1)通过一个类的全限定名来获取定义此类的二进制字节流。
+
+2)将这个字节流所代表的静态存储结构转化为方法区的运行时数据结构。
+
+3)在内存中生成一个代表这个类的java.lang.Class对象，作为方法区这个类的各种数据的访问入 口。
+
+
 
 ## Java 为什么是高效的?
 
@@ -1561,7 +1886,15 @@ GC(垃圾回收/garbage collector)也不是完美的，缺点就是如果会在�
 
 3.线程太多
 
+## 多态
 
+多态中方法多态的实现是靠动态分派
+
+### 动态分派原理
+
+![image-20200801164355442](README.assets/image-20200801164355442.png)
+
+虚方法表中存放着各个方法的实际入口地址。如果某个方法在子类中没有被重写，那子类的虚方 法表中的地址入口和父类相同方法的地址入口是一致的，都指向父类的实现入口。如果子类中重写了 这个方法，子类虚方法表中的地址也会被替换为指向子类实现版本的入口地址。在图8-3中，Son重写 了 来 自 F a t h e r 的 全 部 方 法 ， 因 此 So n 的 方 法 表 没 有 指 向 F a t h e r 类 型 数 据 的 箭 头 。 但 是 So n 和 F a t h e r 都 没 有 重写来自Object的方法，所以它们的方法表中所有从Object继承来的方法都指向了Object的数据类型。
 
 # Mysql
 
@@ -1845,7 +2178,6 @@ alter table person add index city_user(city, name);
   ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction
   ```
 
-
 作者：小孩子4919
 链接：https://juejin.im/post/5d8082bc6fb9a06b032031a2
 来源：掘金
@@ -2076,6 +2408,14 @@ public class PropertyValues {
 5. 遍历标签下的标签，从中读取属性值，并保持在 BeanDefinition 对象中
 6. 将 <id, BeanDefinition> 键值对缓存在 Map 中，留作后用
 7. 重复3、4、5、6步，直至解析结束
+
+## Spring Boot自动配置原理
+
+https://blog.csdn.net/u014745069/article/details/83820511?utm_medium=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.channel_param&depth_1-utm_source=distribute.pc_relevant.none-task-blog-BlogCommendFromMachineLearnPai2-1.channel_param
+
+Spring Boot启动的时候会通过@EnableAutoConfiguration注解找到META-INF/spring.factories配置文件中的所有自动配置类，并对其进行加载，而这些自动配置类都是以AutoConfiguration结尾来命名的，它实际上就是一个JavaConfig形式的Spring容器配置类，它能通过以Properties结尾命名的类中取得在全局配置文件中配置的属性如：server.port，而XxxxProperties类是通过@ConfigurationProperties注解与全局配置文件中对应的属性进行绑定的。
+
+
 
 # 算法
 
@@ -2693,6 +3033,79 @@ class Solution {
 }
 ```
 
+## java.lang.Integer#parseInt() 源码分析
+
+https://juejin.im/post/6844904104251097095
+
+
+
+```
+ public static int parseInt(String s, int radix)
+                throws NumberFormatException
+    {
+        /*
+         * WARNING: This method may be invoked early during VM initialization
+         * before IntegerCache is initialized. Care must be taken to not use
+         * the valueOf method.
+         */
+
+        if (s == null) {
+            throw new NumberFormatException("null");
+        }
+
+        if (radix < Character.MIN_RADIX) {
+            throw new NumberFormatException("radix " + radix +
+                                            " less than Character.MIN_RADIX");
+        }
+
+        if (radix > Character.MAX_RADIX) {
+            throw new NumberFormatException("radix " + radix +
+                                            " greater than Character.MAX_RADIX");
+        }
+
+        int result = 0;
+        boolean negative = false;
+        int i = 0, len = s.length();
+        int limit = -Integer.MAX_VALUE;
+        int multmin;
+        int digit;
+
+        if (len > 0) {
+            char firstChar = s.charAt(0);
+            if (firstChar < '0') { // Possible leading "+" or "-"
+                if (firstChar == '-') {
+                    negative = true;
+                    limit = Integer.MIN_VALUE;
+                } else if (firstChar != '+')
+                    throw NumberFormatException.forInputString(s);
+
+                if (len == 1) // Cannot have lone "+" or "-"
+                    throw NumberFormatException.forInputString(s);
+                i++;
+            }
+            multmin = limit / radix;
+            while (i < len) {
+                // Accumulating negatively avoids surprises near MAX_VALUE
+                digit = Character.digit(s.charAt(i++),radix);
+                if (digit < 0) {
+                    throw NumberFormatException.forInputString(s);
+                }
+                if (result < multmin) {
+                    throw NumberFormatException.forInputString(s);
+                }
+                result *= radix;
+                if (result < limit + digit) {
+                    throw NumberFormatException.forInputString(s);
+                }
+                result -= digit;
+            }
+        } else {
+            throw NumberFormatException.forInputString(s);
+        }
+        return negative ? result : -result;
+    }
+```
+
 
 
 # 分布式
@@ -2954,6 +3367,10 @@ https://www.bilibili.com/video/BV19t4y1X7D3?from=search&seid=1460097810829895205
 
 https://zhuanlan.zhihu.com/p/103572219
 
+## 1000个苹果分十箱
+
+https://blog.csdn.net/Gnd15732625435/article/details/76407974
+
 # 情景题
 
 ## 二维码扫描登录原理
@@ -2990,7 +3407,10 @@ https://juejin.im/post/5dbd9c5af265da4d3a52e4a2#comment
 来源：简书
 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 
+## 实现一个适合高并发场景的LRU缓存
 
+基础答案，基于LinkedHashMap + synchronized，实现无误
+进阶答案，解决synchronized带来的性能损耗，例如基于ConcurrentHashMap，value是基于缓存值+时间戳的装饰类，利用timer线程异步维护缓存大小
 
 # ES
 
