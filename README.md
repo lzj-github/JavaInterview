@@ -92,6 +92,18 @@ TCP 模块在执行连接、收发、断开等各阶段操作时，都需要委�
 
 最后浏览器获得数据后进行渲染就能呈现出页面出来了
 
+## 网络协议为什么分层
+
+(1)各层之间是独立的。某一层并不需要知道它的下一层是如何实现的，而仅仅需要知道该层通过层间的接口所提供的服务。这样，整个问题的复杂程度就下降了。也就是说上一层的工作如何进行并不影响下一层的工作，这样我们在进行每一层的工作[设计](https://www.applysquare.com/fos-cn/design/)时只要保证接口不变可以随意调整层内的工作方式。
+
+(2)灵活性好。当任何一层发生变化时，只要层间接口关系保持不变，则在这层以上或以下各层均不受影响。当某一层出现技术革新或者某一层在工作中出现问题时不会连累到其他层的工作，排除问题时也只需要考虑这一层单独的问题即可。
+
+(3)结构上可分割开。各层都可以采用最合适的技术来实现。技术的发展往往是不对称的，层次化的划分有效避免了木桶效应，不会因为某一方面技术的不完善而影响整体的工作效率。
+
+(4)易于实现和维护。这种结构使得实现和调试一个庞大又复杂的系统变得易于处理，因为整个的系统已被分解为若干个相对独立的子系统。进行调试和维护时，可以对每一层进行单独的调试，避免了出现找不到问题、解决错问题的情况。
+
+(5 能促进标准化工作。因为每一层的功能及其所提供的服务都已有了精确的说明。标准化的好处就是可以随意替换其中的某几层，对于使用和科研来说十分方便。
+
 
 
 ## TCP粘包
@@ -172,8 +184,36 @@ URG(urgent)：紧急标志，用于保证TCP连接不被中断，并且督促中
 
 
 
-
 ![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZeo9xBVAyPJ8iaWCC6sYS8431Mymq2yPGjMPGodSEg8b31eoyQbibzGjDEHiaQUUDlbvCEwcXN3aicOTw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
+
+### 三次握手初始序列号
+
+ RFC 793 [RFC0793]建议使用全局32位ISN生成器
+   大约每4微秒增加1。
+
+为了防止序列号猜测攻击
+
+#### TCP序列号预测攻击原理
+
+https://blog.csdn.net/AlimSah/article/details/52725331
+
+
+
+建议的初始序号生成算法
+
+   TCP应该使用以下表达式生成其初始序列号：
+
+      ISN = M + F（localip，localport，remoteip，remoteport，密钥）
+
+   其中M是4微秒计时器，而F（）是伪随机
+   连接ID的功能（PRF）。F（）绝对不能从
+   外面，否则攻击者仍然可以猜测序列号
+   从ISN用于其他一些连接。PRF可能是
+   实现为的级联的加密哈希
+   连接ID和一些秘密数据；MD5 [RFC1321]会很好
+   哈希函数的选择。
 
 ### 为什么客户端关闭连接前要等待2MSL时间？
 
@@ -349,6 +389,8 @@ TCP协议保证数据传输可靠性的方式主要有：
 - 客户端调用 `write` 写入数据；服务端调用 `read` 读取数据；
 - 客户端断开连接时，会调用 `close`，那么服务端 `read` 读取数据的时候，就会读取到了 `EOF`，待处理完数据后，服务端调用 `close`，表示连接关闭。
 
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/0_1314694589UeXT.gif)
+
 ### TCP、UDP数据包大小的限制
 
 ![image-20200813111620210](README.assets/image-20200813111620210.png)
@@ -375,15 +417,7 @@ BBR算法是个主动的闭环反馈系统，通俗来说就是根据带宽和RT
 
 BBR算法是个主动的闭环反馈系统，通俗来说就是根据带宽和RTT延时来不断动态探索寻找合适的发送速率和发送量。
 
-## 为什么ip数据包最小要64字节
 
-![image-20200813143530187](README.assets/image-20200813143530187.png)
-
-因为需要冲突检测	
-
-![image-20200813143829212](README.assets/image-20200813143829212.png)
-
-![image-20200813143848201](README.assets/image-20200813143848201.png)
 
 ### 快速重传解决的问题
 
@@ -428,6 +462,63 @@ Duplicate SACK 又称 `D-SACK`，其主要**使用了 SACK 来告诉「发送方
 你觉得哪种效率高？明显是第二种，转发的设备不需要关心这些事，只管转发就完事！
 
 所以把控制的逻辑独立出来成 TCP 层，让真正的接收端来处理，这样网络整体的传输效率就高了。
+
+### 大量的 TIME_WAIT 状态 TCP 连接
+
+https://jishuin.proginn.com/p/763bfbd29315
+
+大量的 `TIME_WAIT` 状态 TCP 连接存在，其本质原因是什么？
+
+- 大量的**短连接**存在
+
+解决办法
+
+解决上述 `time_wait` 状态大量存在，导致新连接创建失败的问题，一般解决办法：
+
+1、**客户端**，HTTP 请求的头部，connection 设置为 keep-alive，保持存活一段时间：现在的浏览器，一般都这么进行了 2、**服务器端**，
+
+- 允许 `time_wait` 状态的 socket 被**重用**
+- 缩减 `time_wait` 时间，设置为 `1 MSL`（即，2 mins）
+
+
+
+解决方案
+
+> ```
+> a、修改TIME_WAIT连接状态的上限值
+> b、启动快速回收机制
+> c、开启复用机制
+> d、修改短连接为长连接方式
+> ```
+
+快速回收
+
+什么是快速回收机制？既然前面说了TIME_WAIT等待2*MSL时长是有必要的，怎么又可以快速回收了？ 快速回收机制是系统对tcp连接通过一种方式进行快速回收的机制，对应内核参数中的net.ipv4.tcp_tw_recycle，要搞清楚这个参数，就不得不提一下另一个内核参数：net.ipv4.tcp_timestamps
+
+> ```
+> net.ipv4.tcp_timestamps是在RFC 1323中定义的一个TCP选项。
+> tcp_timestamps的本质是记录数据包的发送时间
+> TCP作为可靠的传输协议，一个重要的机制就是超时重传。因此如何计算一个准确(合适)的RTO对于TCP性能有着重要的影响。而tcp_timestamp选项正是*主要*为此而设计的。 
+> ```
+
+**当timestamp和tw_recycle两个选项同时开启的情况下，开启per-host的PAWS机制。从而能快速回收处于TIME-WAIT状态的TCP流。**
+
+> PAWS — Protect Againest Wrapped Sequence numbers 目的是解决在高带宽下，TCP序号可能被重复使用而带来的问题。 PAWS同样依赖于timestamp，并且假设在一个TCP流中，按序收到的所有TCP包的timestamp值都是线性递增的。而在正常情况下，每条TCP流按序发送的数据包所带的timestamp值也确实是线性增加的。 如果针对per-host的使用PAWS中的机制，则会解决TIME-WAIT中考虑的上一个流的数据包在下一条流中被当做有效数据包的情况，这样就没有必要等待2*MSL来结束TIME-WAIT了。只要等待足够的RTO，解决好需要重传最后一个ACK的情况就可以了。因此Linux就实现了这样一种机制： 当timestamp和tw_recycle两个选项同时开启的情况下，开启per-host的PAWS机制。从而能快速回收处于TIME-WAIT状态的TCP流。
+
+重用机制
+
+```
+net.ipv4.tcp_tw_reuse = 1
+```
+
+如果能保证以下任意一点，一个TW状态的四元组(即一个socket连接)可以重新被新到来的SYN连接使用：
+
+1. 初始序列号比TW老连接的末序列号大
+2. 如果使能了时间戳，那么新到来的连接的时间戳比老连接的时间戳大
+
+如何理解这2个条件？
+
+> 既然TIME_WAIT不是为了阻止新连接，那么只要能证明自己确实属于新连接而不是老连接的残留数据，那么该连接即使匹配到了TIME_WAIT的四元组也是可以接受的，即可以重用TIME_WAIT的连接。如何来保证呢？很简单，只需要把老的数据丢在窗口外即可。为此，只要新连接的初始序列号比老连接的FIN包末尾序列号大，那么老连接的所有数据即使迟到也会落在窗口之外，从而不会破坏新建连接！ 即使不使用序列号，还是可以使用时间戳，因为TCP/IP规范规定IP地址要是唯一的，根据这个唯一性，欲重用TIME_WAIT连接的新连接的必然发自同一台机器，而机器时间是单调递增不能倒流的，因此只要新连接带有时间戳且其值比老连接FIN时的时间戳大，就认为该新连接是可以接受的，时间戳重用TW连接的机制的前提是IP地址唯一性导出的发起自同一台机器，那么不满足该前提的则不能基于此来重用TIME_WAIT连接，因此NAT环境不能这么做遍成了自然而然的结论。
 
 ## http的理解
 
@@ -495,6 +586,18 @@ HTTP 比较严重的缺点就是不安全：
 https://mp.weixin.qq.com/s/amOya0M00LwpL5kCS96Y6w
 
 ![image-20200807114710930](README.assets/image-20200807114710930.png)
+
+如何保证公钥不被篡改和信任度
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/J0g14CUwaZfXG1113Sjm0iaOXfoOv0tlUibyiaEab7NMrTn632LZmYQe5qaibibT0xsOs7ic6u98ypWJBjbPMzOUCb2g/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+验证过程
+
+https://www.cnblogs.com/handsomeBoys/p/6556336.html
+
+ 读取证书中的相关的明文信息，采用相同的散列函数计算得到信息摘要，然后，利用对应 CA 的公钥解密签名数据，对比证书的信息摘要，如果一致，则可以确认证书的合法性，即公钥合法；
+
+客户端然后验证证书相关的域名信息、有效时间等信息；
 
 ## HTTP格式
 
@@ -591,7 +694,15 @@ HTTP/2 还在一定程度上改善了传统的「请求 - 应答」工作模式�
 
 举例来说，在浏览器刚请求 HTML 的时候，就提前把可能会用到的 JS、CSS 文件等静态资源主动发给客户端，**减少延时的等待**，也就是服务器推送（Server Push，也叫 Cache Push）。
 
+## 为什么ip数据包最小要64字节
 
+![image-20200813143530187](README.assets/image-20200813143530187.png)
+
+因为需要冲突检测	
+
+![image-20200813143829212](README.assets/image-20200813143829212.png)
+
+![image-20200813143848201](README.assets/image-20200813143848201.png)
 
 ## 正向代理和反向代理的区别
 
@@ -737,6 +848,10 @@ CDN 加速，我们可以这么理解：为了减少流氓骚扰，我干脆将�
 1. 需要在客户端对发送的我呢见进行编码
 2. 服务端接收到发送的数据后根据客户端的数据编码进行排序
 3. 发送数据时采用较小的数据块，数据块如果太大会造成服务端网卡中的缓存太大，丢失问题
+
+## http协议 301和302的原理及实现  重定向
+
+https://www.cnblogs.com/zengguowang/p/5737002.html
 
 # Redis
 
@@ -958,7 +1073,7 @@ https://www.jianshu.com/p/16ff1fc9e13c
 
 https://juejin.im/post/5b95da8a5188255c775d8124#comment
 
-![img](面试总结.assets/166531db5864bf1a)
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/849589-20171015233043168-1867817869.png)
 
 ### 冒泡排序
 
@@ -1172,6 +1287,65 @@ public class SelectSort {
 
 ```
 
+### 堆排序
+
+```
+//声明全局变量，用于记录数组array的长度；
+static int len;
+    /**
+     * 堆排序算法
+     *
+     * @param array
+     * @return
+     */
+    public static int[] HeapSort(int[] array) {
+        len = array.length;
+        if (len < 1) return array;
+        //1.构建一个最大堆
+        buildMaxHeap(array);
+        //2.循环将堆首位（最大值）与末位交换，然后在重新调整最大堆
+        while (len > 0) {
+            swap(array, 0, len - 1);
+            len--;
+            adjustHeap(array, 0);
+        }
+        return array;
+    }
+    /**
+     * 建立最大堆
+     *
+     * @param array
+     */
+    public static void buildMaxHeap(int[] array) {
+        //从最后一个非叶子节点开始向上构造最大堆
+        for (int i = (len/2 - 1); i >= 0; i--) { //感谢 @让我发会呆 网友的提醒，此处应该为 i = (len/2 - 1) 
+            adjustHeap(array, i);
+        }
+    }
+    /**
+     * 调整使之成为最大堆
+     *
+     * @param array
+     * @param i
+     */
+    public static void adjustHeap(int[] array, int i) {
+        int maxIndex = i;
+        //如果有左子树，且左子树大于父节点，则将最大指针指向左子树
+        if (i * 2 < len && array[i * 2] > array[maxIndex])
+            maxIndex = i * 2;
+        //如果有右子树，且右子树大于父节点，则将最大指针指向右子树
+        if (i * 2 + 1 < len && array[i * 2 + 1] > array[maxIndex])
+            maxIndex = i * 2 + 1;
+        //如果父节点不是最大值，则将父节点与最大值交换，并且递归调整与父节点交换的位置。
+        if (maxIndex != i) {
+            swap(array, maxIndex, i);
+            adjustHeap(array, maxIndex);
+        }
+    }
+```
+
+
+
 ### 排序算法稳定性的作用
 
 举个例子，一个班的学生已经按照学号大小排好序了，我现在要求按照年龄从小到大再排个序，如果年龄相同的，必须按照学号从小到大的顺序排列。那么问题来了，你选择的年龄排序方法如果是不稳定的，是不是排序完了后年龄相同的一组学生学号就乱了，你就得把这组年龄相同的学生再按照学号拍一遍。如果是稳定的排序算法，我就只需要按照年龄排一遍就好了。
@@ -1220,6 +1394,12 @@ public class SelectSort {
 https://blog.csdn.net/FX677588/article/details/70767446
 
 **哈夫曼（Huffman）编码算法**是基于二叉树构建编码压缩结构的，它是数据压缩中经典的一种算法。算法根据文本字符出现的频率，重新对字符进行编码。因为为了缩短编码的长度，我们自然希望频率越高的词，编码越短，这样最终才能最大化压缩存储文本数据的空间。
+
+## 红黑树为什么综合性能好？
+
+![image-20200922162415513](https://gitee.com/xurunxuan/picgo/raw/master/img/image-20200922162415513.png)
+
+缺点：与AVL相比高度更大，所以查询比AVL慢一丢丢
 
 # ZooKeeper
 
@@ -1358,10 +1538,14 @@ https://mp.weixin.qq.com/s/oexktPKDULqcZQeplrFunQ
 
 - 线程的创建时间比进程快，因为进程在创建的过程中，还需要资源管理信息，比如内存管理信息、文件管理信息，而线程在创建的过程中，不会涉及这些资源管理信息，而是共享它们；
 - 线程的终止时间比进程快，因为线程释放的资源相比进程少很多；
-- 同一个进程内的线程切换比进程切换快，因为线程具有相同的地址空间（虚拟内存共享），这意味着同一个进程的线程都具有同一个页表，那么在切换的时候不需要切换页表。而对于进程之间的切换，切换的时候要把页表给切换掉，而页表的切换过程开销是比较大的；
+- **同一个进程内的线程切换比进程切换快，因为线程具有相同的地址空间（虚拟内存共享），这意味着同一个进程的线程都具有同一个页表，那么在切换的时候不需要切换页表。而对于进程之间的切换，切换的时候要把页表给切换掉，而页表的切换过程开销是比较大的；**
 - 由于同一进程的各线程间共享内存和文件资源，那么在线程之间数据传递的时候，就不需要经过内核了，这就使得线程之间的数据交互效率更高了；
 
 所以，线程比进程不管是时间效率，还是空间效率都要高。
+
+## 设置线程数
+
+最佳线程数目 = （（线程等待时间+线程CPU时间）/线程CPU时间 ）* CPU数目
 
 ## 进程间通信的方式
 
@@ -1478,7 +1662,19 @@ https://www.runoob.com/linux/linux-system-boot.html
 
 ##  Reactor模式详解
 
-https://www.cnblogs.com/winner-0715/p/8733787.html	
+https://juejin.im/post/6844903682509635598#comment
+
+​	![reactor1](https://gitee.com/xurunxuan/picgo/raw/master/img/165f6bd23ca497e5)
+
+![reactor2](https://gitee.com/xurunxuan/picgo/raw/master/img/165f6bd23cd1ac70)
+
+![reactor3_nio](https://gitee.com/xurunxuan/picgo/raw/master/img/165f6bd255e9574b)
+
+
+
+
+
+
 
 ## **5种IO模型对比**
 
@@ -1539,6 +1735,8 @@ https://zhuanlan.zhihu.com/p/52845869
 所以，**系统调用过程通常称为特权模式切换，而不是上下文切换。系统调用属于同进程内的 CPU 上下文切换**。但实际上，系统调用过程中，CPU 的上下文切换还是无法避免的。
 
 ## IO多路复用select/poll/epoll
+
+https://blog.csdn.net/daaikuaichuan/article/details/83862311
 
 https://www.bilibili.com/video/BV1qJ411w7du?from=search&seid=4343876570196268087
 
@@ -1700,6 +1898,10 @@ ET:边缘触发
 
 在Linux的学习中，一切皆文件的理念无处不在，文档、目录、磁盘驱动器、CD-ROM、调制解调器、键盘、打印机、显示器、终端，甚至是一些进程间通信和网络通信。所有这些资源拥有一个通用的抽象，在Linux中将其称为“文件”，其实Unix就是这种思想，所以Linux也借鉴了这个思想，因为每个“文件”都通过相同的 API 暴露出来，所以你可以使用同一组基本命令来读取和写入磁盘、键盘、文档或网络设备， “一切皆文件”的思想提供了***一个强大而简单的抽象，那就是无论是硬件设备、还是网络连接、还是我们日常解除的文件，都是文件，这样使得API的设计可以化繁为简，用户可以使用通用的方式去访问任何资源，自有相应的中间件做好对底层的适配。*** 所以在Linux操作系统看来，一切都是文件，也就意味着，网卡设备也是文件，Socket连接也是文件，文件的统一抽象使得都有共同的属性，
 
+### Linux常用命令
+
+https://juejin.im/post/6844903940690034702
+
 ## Netty Reactor模型
 
 https://juejin.im/post/6844903712435994631#comment
@@ -1766,9 +1968,42 @@ mmap的工作原理，当你发起这个调用的时候，它只是在你的虚�
 
    **数据段保存在源代码中已经初始化的静态变量的内容。数据段不是匿名的，它映射了一部分的程序二进制镜像，也就是源代码中指定了初始值的静态变量。**
 
-### 堆和栈区别
+## 堆和栈区别
 
-![img](https://gitee.com/xurunxuan/picgo/raw/master/img/20140905214120358)
+申请后系统的响应  
+ 栈：只要栈的剩余空间大于所申请空间，系统将为程序提供内存，否则将报异常提示栈溢 
+ 出。  
+ 堆：首先应该知道操作系统有一个记录空闲内存地址的链表，当系统收到程序的申请时， 
+ 会遍历该链表，寻找第一个空间大于所申请空间的堆结点，然后将该结点从空闲结点链表 
+ 中删除，并将该结点的空间分配给程序，另外，对于大多数系统，会在这块内存空间中的 
+ 首地址处记录本次分配的大小，这样，代码中的delete语句才能正确的释放本内存空间。 
+ 另外，由于找到的堆结点的大小不一定正好等于申请的大小，系统会自动的将多余的那部 
+ 分重新放入空闲链表中。  
+
+ 2.3申请大小的限制  
+ 栈：在Windows下,栈是向低地址扩展的数据结构，是一块连续的内存的区域。这句话的意 
+ 思是栈顶的地址和栈的最大容量是系统预先规定好的，在WINDOWS下，栈的大小是2M（也有 
+ 的说是1M，总之是一个编译时就确定的常数），如果申请的空间超过栈的剩余空间时，将 
+ 提示overflow。因此，能从栈获得的空间较小。  
+ 堆：堆是向高地址扩展的数据结构，是不连续的内存区域。这是由于系统是用链表来存储 
+ 的空闲内存地址的，自然是不连续的，而链表的遍历方向是由低地址向高地址。堆的大小 
+ 受限于计算机系统中有效的虚拟内存。由此可见，堆获得的空间比较灵活，也比较大。  
+
+ 
+
+ 2.4申请效率的比较：  
+ 栈由系统自动分配，速度较快。但程序员是无法控制的。  
+ 堆是由new分配的内存，一般速度比较慢，而且容易产生内存碎片,不过用起来最方便.  
+ 另外，在WINDOWS下，最好的方式是用VirtualAlloc分配内存，他不是在堆，也不是在栈是 
+ 直接在进程的地址空间中保留一块内存，虽然用起来最不方便。但是速度快，也最灵活。 
+
+ 2.5堆和栈中的存储内容  
+ 栈：  在函数调用时，第一个进栈的是主函数中后的下一条指令（函数调用语句的下一条可 
+ 执行语句）的地址，然后是函数的各个参数，在大多数的C编译器中，参数是由右往左入栈 
+ 的，然后是函数中的局部变量。注意静态变量是不入栈的。  
+ 当本次函数调用结束后，局部变量先出栈，然后是参数，最后栈顶指针指向最开始存的地 
+ 址，也就是主函数中的下一条指令，程序由该点继续运行。  
+ 堆：一般是在堆的头部用一个字节存放堆的大小。堆中的具体内容由程序员安排。  
 
 堆和栈访问效率
 
@@ -1794,6 +2029,157 @@ https://juejin.im/post/6844903962043236365
 进程间文件描述符的传递，只是通过内核将接收文件的一个新的file指针指向和发送进程的同一个file对象，并使这个file对象的引用计数增加。
 
 ![img](https://gitee.com/xurunxuan/picgo/raw/master/img/20140407104754718)
+
+## 无锁编程
+
+CopyOnWrite
+
+CAS
+
+## Linux中本机和本机Socket通信会走网卡吗
+
+**不走网卡，不走物理设备，但是走虚拟设备，loopback device环回.**
+
+本机的报文的路径是这样的：
+应用层-> socket接口 -> 传输层（tcp/udp报文） -> 网络层 -> back to 传输层 -> backto socket接口 -.> 传回应用程序
+
+在网络层，会在路由表查询路由，路由表（软件路由，真正的转发需要依靠硬件路由，这里路由表包括快速转发表和FIB表）初始化时会保存主机路由(host route，or 环回路由)， 查询（先匹配mask，再匹配ip，localhost路由在路由表最顶端，最优先查到）后发现不用转发就不用走中断，不用发送给链接层了，不用发送给网络设备（网卡）。像网卡发送接收报文一样，走相同的接收流程，只不过net device是loopback device，最后发送回应用程序。这一套流程当然和转发和接收外网报文一样，都要经过内核协议栈的处理，不同的是本机地址不用挂net device.
+
+
+
+作者：王小陆
+链接：https://www.zhihu.com/question/43590414/answer/96246937
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+## linux在系统调用进入内核时，为什么要将参数从用户空间拷贝到内核空间
+
+首先，内核不能信任任何用户空间的指针。必须对用户空间的指针指向的数据进行验证。如果只做验证不做拷贝的话，那么在随后的运行中要随时受到其它进／线程可能修改用户空间数据的威胁。所以必须做拷贝。（有人提到在 copy 过程中数据依然可以被修改。是的，但是这种修改不能称为「篡改」。因为这种修改是在「合法性检查」之前发生的，影响的是用户进程的正确性，而不是内核对数据的验证。copy 只保证最后被使用的数据是被验证的数据，至于有没有 race 去破坏被传入的数据本身的正确性不在内核责任之内。要注意，「合法性」不等于「正确性」。）
+
+
+
+作者：冯东
+链接：https://www.zhihu.com/question/19728793/answer/137716739
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+## 零拷贝
+
+https://mp.weixin.qq.com/s/P0IP6c_qFhuebwdwD8HM7w
+
+#### mmap + write
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZcHKiczImueTBjnrXSnRM13mokPruysrVuhMBbPeLsoFylbxLo07NGXLqyzKZfHI3r29kdqkDaImsQ/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+- 应用进程调用了 `mmap()` 后，DMA 会把磁盘的数据拷贝到内核的缓冲区里。接着，应用进程跟操作系统内核「共享」这个缓冲区；
+- 应用进程再调用 `write()`，操作系统直接将内核缓冲区的数据拷贝到 socket 缓冲区中，这一切都发生在内核态，由 CPU 来搬运数据；
+- 最后，把内核的 socket 缓冲区里的数据，拷贝到网卡的缓冲区里，这个过程是由 DMA 搬运的。
+
+我们可以得知，通过使用 `mmap()` 来代替 `read()`， 可以减少一次数据拷贝的过程。
+
+但这还不是最理想的零拷贝，因为仍然需要通过 CPU 把内核缓冲区的数据拷贝到 socket 缓冲区里，而且仍然需要 4 次上下文切换，因为系统调用还是 2 次。
+
+#### sendfile
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZcHKiczImueTBjnrXSnRM13mD19b7SCEuj1icTmFg5kg4xmIq0vqhqKVM1o7oISMaZxoUcKCl7yGwvg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+它可以替代前面的 `read()` 和 `write()` 这两个系统调用，这样就可以减少一次系统调用，也就减少了 2 次上下文切换的开销。
+
+其次，该系统调用，可以直接把内核缓冲区里的数据拷贝到 socket 缓冲区里，不再拷贝到用户态，这样就只有 2 次上下文切换，和 3 次数据拷贝
+
+
+
+SG-DMA
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZcHKiczImueTBjnrXSnRM13m9aUVVJ2BT9QBoPQqB1iaTSn4kSL1sR9sQYLGbsPxticvZgIptotGT3Ng/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
+
+**只需要 2 次上下文切换和数据拷贝次数，就可以完成文件的传输，而且 2 次的数据拷贝过程，都不需要通过 CPU，2 次都是由 DMA 来搬运。**
+
+### PageCache 有什么作用？
+
+回顾前面说道文件传输过程，其中第一步都是先需要先把磁盘文件数据拷贝「内核缓冲区」里，这个「内核缓冲区」实际上是**磁盘高速缓存（\*PageCache\*）**。
+
+PageCache 的优点主要是两个：
+
+- 缓存最近被访问的数据；
+- 预读功能；
+
+**但是，在传输大文件（GB 级别的文件）的时候，PageCache 会不起作用，那就白白浪费 DMA 多做的一次数据拷贝，造成性能的降低，即使使用了 PageCache 的零拷贝也会损失性能**
+
+因为如果你有很多 GB 级别文件需要传输，每当用户访问这些大文件的时候，内核就会把它们载入 PageCache 中，于是 PageCache 空间很快被这些大文件占满。
+
+另外，由于文件太大，可能某些部分的文件数据被再次访问的概率比较低，这样就会带来 2 个问题：
+
+- PageCache 由于长时间被大文件占据，其他「热点」的小文件可能就无法充分使用到 PageCache，于是这样磁盘读写的性能就会下降了；
+- PageCache 中的大文件数据，由于没有享受到缓存带来的好处，但却耗费 DMA 多拷贝到 PageCache 一次；
+
+**在高并发的场景下，针对大文件的传输的方式，应该使用「异步 I/O + 直接 I/O」来替代零拷贝技术**。**在高并发的场景下，针对大文件的传输的方式，应该使用「异步 I/O + 直接 I/O」来替代零拷贝技术**。
+
+
+
+需要注意的是，零拷贝技术是不允许进程对文件内容作进一步的加工的，比如压缩数据再发送。
+
+
+
+应用程序没有权限直接操作设备，都是交给内核处理的，文中也有提到。你说的没错，这样就有多份一模一样的数据，所以为了减少内存的浪费，就出现了零拷贝技术呀
+
+## [孤儿进程与僵尸进程](https://www.cnblogs.com/Anker/p/3271773.html)
+
+https://www.cnblogs.com/Anker/p/3271773.html
+
+**孤儿进程：一个父进程退出，而它的一个或多个子进程还在运行，那么那些子进程将成为孤儿进程。孤儿进程将被init进程(进程号为1)所收养，并由init进程对它们完成状态收集工作。**
+
+　　**僵尸进程：一个进程使用fork创建子进程，如果子进程退出，而父进程并没有调用wait或waitpid获取子进程的状态信息，那么子进程的进程描述符仍然保存在系统中。这种进程称之为僵死进程。**
+
+原因
+
+unix提供了一种机制可以保证只要父进程想知道子进程结束时的状态信息， 就可以得到。这种机制就是: 在每个进程退出的时候,内核释放该进程所有的资源,包括打开的文件,占用的内存等。 但是仍然为其保留一定的信息(包括进程号the process ID,退出状态the termination status of the process,运行时间the amount of CPU time taken by the process等)。直到父进程通过wait / waitpid来取时才释放。
+
+## 打开文件过程
+
+https://www.cnblogs.com/huxiao-tee/p/4657851.html
+
+**读文件**
+
+1、进程调用库函数向内核发起读文件请求；
+
+2、内核通过检查进程的文件描述符定位到虚拟文件系统的已打开文件列表表项；
+
+3、调用该文件可用的系统调用函数read()
+
+3、read()函数通过文件表项链接到目录项模块，根据传入的文件路径，在目录项模块中检索，找到该文件的inode；
+
+4、在inode中，通过文件内容偏移量计算出要读取的页；
+
+5、通过inode找到文件对应的address_space；
+
+6、在address_space中访问该文件的页缓存树，查找对应的页缓存结点：
+
+（1）如果页缓存命中，那么直接返回文件内容；
+
+（2）如果页缓存缺失，那么产生一个页缺失异常，创建一个页缓存页，同时通过inode找到文件该页的磁盘地址，读取相应的页填充该缓存页；重新进行第6步查找页缓存；
+
+7、文件内容读取成功。
+
+ 
+
+**写文件**
+
+前5步和读文件一致，在address_space中查询对应页的页缓存是否存在：
+
+6、如果页缓存命中，直接把文件内容修改更新在页缓存的页中。写文件就结束了。这时候文件修改位于页缓存，并没有写回到磁盘文件中去。
+
+7、如果页缓存缺失，那么产生一个页缺失异常，创建一个页缓存页，同时通过inode找到文件该页的磁盘地址，读取相应的页填充该缓存页。此时缓存页命中，进行第6步。
+
+8、一个页缓存中的页如果被修改，那么会被标记成脏页。脏页需要写回到磁盘中的文件块。有两种方式可以把脏页写回磁盘：
+
+（1）手动调用sync()或者fsync()系统调用把脏页写回
+
+（2）pdflush进程会定时把脏页写回到磁盘
+
+同时注意，脏页不能被置换出内存，如果脏页正在被写回，那么会被设置写回标记，这时候该页就被上锁，其他写请求被阻塞直到锁释放。
 
 # 设计模式
 
@@ -2676,6 +3062,16 @@ https://www.jianshu.com/p/99f34a91aefe
 第五步：对结果resultSet进行处理；
 第六步：倒叙释放资源resultSet-》preparedStatement-》connection。
 
+## Java线程池是如何实现线程复用的？
+
+https://www.jianshu.com/p/5e952ab2c41b
+
+1、当Thread的run方法执行完一个任务之后，会循环地从阻塞队列中取任务来执行，这样执行完一个任务之后就不会立即销毁了；
+
+2、当工作线程数小于核心线程数，那些空闲的核心线程再去队列取任务的时候，如果队列中的Runnable数量为0，就会阻塞当前线程，这样线程就不会回收了
+
+
+
 # Mysql
 
 ## 储存格式
@@ -3103,6 +3499,31 @@ https://www.zhihu.com/question/24696366/answer/29189700
 ### 图解MySQL 内连接、外连接、左连接、右连接、全连接
 
 https://blog.csdn.net/plg17/article/details/78758593
+
+## 一棵B+数可以存放多少行数据。
+
+ 这个就得因地制宜了。首先，InnoDB底层的数据页大小默认为16KB，一般来说，生产环境一行数据为1KB左右，那么一个数据页可以存放16条数据。剩下的只要计算有多少个数据页就行了。
+ InnoDB的一个页可以为索引页，也可以为数据页。数据页上文已分析。对于索引页，里面数据是怎么存放的呢？索引页存放的是主键和指针（6 Byte），若建表时没有指定主键，mysql会自动创建一个6Byte的主键。一般数据库中我们使用bigint的自增id作为主键（8Byte），那么一个<主键，指针>对大小为14Byte。一个16KB的索引页可以存放16*1024/14=1170个单元。
+ 一般树高为3层，那么对应的数据页有1170*1170个，数据行数为1170*1170*16=2000W行。
+
+
+
+作者：赖床实习生
+链接：https://www.jianshu.com/p/b6f8261da854
+来源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+
+
+## 数据库死锁怎么处理
+
+1.每个事务都有一个时间阀值，如果该事务超时，那么就回滚该事务。
+
+这样实现简单，但是，如果事务操作很多行，占用了较多的undolog，而另外一个事务占用较少，这样不合适，而且超时不是一种主动检查死锁的方式。
+
+2.使用等待图
+
+比如，row1事务2上写锁，事务1上读锁，那么事务1就要等事务2，就是说事务1指向事务2，可以用深度遍历，如果存在环，那么挑一个undo log量最小的来进行回滚。
 
 
 
@@ -4014,6 +4435,65 @@ return 0;
 }
 ```
 
+## 并查集
+
+```
+class UF {
+    // 连通分量个数
+    private int count;
+    // 存储一棵树
+    private int[] parent;
+    // 记录树的“重量”
+    private int[] size;
+
+    public UF(int n) {
+        this.count = n;
+        parent = new int[n];
+        size = new int[n];
+        for (int i = 0; i < n; i++) {
+            parent[i] = i;
+            size[i] = 1;
+        }
+    }
+
+    public void union(int p, int q) {
+        int rootP = find(p);
+        int rootQ = find(q);
+        if (rootP == rootQ)
+            return;
+
+        // 小树接到大树下面，较平衡
+        if (size[rootP] > size[rootQ]) {
+            parent[rootQ] = rootP;
+            size[rootP] += size[rootQ];
+        } else {
+            parent[rootP] = rootQ;
+            size[rootQ] += size[rootP];
+        }
+        count--;
+    }
+
+    public boolean connected(int p, int q) {
+        int rootP = find(p);
+        int rootQ = find(q);
+        return rootP == rootQ;
+    }
+
+    private int find(int x) {
+        while (parent[x] != x) {
+            // 进行路径压缩
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    }
+
+    public int count() {
+        return count;
+    }
+}
+```
+
 
 
 # 分布式
@@ -4484,6 +4964,10 @@ https://www.bilibili.com/video/BV12E411i7ga
 
 与具体的业务场景绑定，耦合性强，不可公用。消息数据与业务数据同库，占用业务系统资源。业务系统在使用[关系型数据库](https://cloud.tencent.com/product/cdb-overview?from=10680)的情况下，消息服务性能会受到关系型数据库并发性能的局限。
 
+## 解决慢查询例子
+
+https://juejin.im/post/6844903696275341319#heading-11
+
 # 智力题
 
 https://cloud.tencent.com/developer/article/1151534
@@ -4533,6 +5017,36 @@ https://www.nowcoder.com/discuss/262595?type=post&order=time&pos=&page=2&channel
 ## 时针，分针在一昼夜的时间内重合次数是多少？
 
 22次。因为时针转了两圈，分针转了24圈，超过了22次
+
+## 分油问题
+
+有容量为10斤、7斤、3斤的桶，10斤的桶中有10斤油，用这3个容器将油均分为5斤
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/v2-90d46d4d9c651e8e4290c44e0f267eac_720w.jpg)
+
+#
+
+## 100盏灯泡的开关问题
+
+https://blog.csdn.net/realxie/article/details/8066927
+
+## 生成随机数(根据rand5()生成rand7())
+
+https://blog.csdn.net/leadai/article/details/79824224
+
+```
+def rand7():    
+
+res = 25    
+
+while res > 21:       
+
+ res = 5 * (rand5() - 1) + rand5()    
+
+return res % 7 + 1
+```
+
+
 
 # 情景题
 
@@ -4650,11 +5164,19 @@ https://labuladong.gitbook.io/algo/labuladong-he-ta-de-peng-you-men/sou-suo-yin-
 
 https://developer.aliyun.com/article/712285
 
-## 分油问题
+## 数据库连接池的原理怎么实现数据库连接池
 
-有容量为10斤、7斤、3斤的桶，10斤的桶中有10斤油，用这3个容器将油均分为5斤
+https://blog.csdn.net/shuaihj/article/details/14223015
 
-![img](https://gitee.com/xurunxuan/picgo/raw/master/img/v2-90d46d4d9c651e8e4290c44e0f267eac_720w.jpg)
+## [【面试被虐】如何只用2GB内存从20亿，40亿，80亿个整数中找到出现次数最多的数？](https://www.cnblogs.com/kubidemanong/p/10983251.html)
+
+## 时间轮
+
+https://www.cnblogs.com/boanxin/p/13059004.html
+
+## 游戏实现实时性
+
+https://juejin.im/entry/6844903486635655176
 
 # ES
 
