@@ -120,6 +120,15 @@ TCP 是一个面向字节流的协议，它是性质是流式的，所以它并�
 - 将消息分为消息头、消息体。可以在消息头中声明消息的长度，根据这个长度来获取报文（比如 808 协议）。
 - 规定好报文长度，不足的空位补齐，取的时候按照长度截取即可。
 
+https://mp.weixin.qq.com/s?__biz=MzU5NTAzNjc3Mg==&mid=2247484248&idx=1&sn=d6da8dfb81b73149d6c2b9c0a2e6b3d4&chksm=fe795c53c90ed545ed78376136b12af1124c127ebfbdb3d03358b8514739dd1e54126cae3e78&mpshare=1&scene=1&srcid=0927i9FIXufky4QfACZShI2i&sharer_sharetime=1601216771975&sharer_shareid=7c323ad8a0150d2a639a51a5c8978bfb&key=acec999da27edd257825b74f6aeb1bfaa451205483a76076abbc597c5c80c475da90ed25efd12ae61bedf1a3b9a95d56c628fa4f35086b28e9ab8f35fc6599fa8246356159801ce5725e2f3ae52ca7ca6d73e8f7935cfd775805c101cbdddf76409a6ebe845b381ce548385150b197e51d4ba3c4ba8deaaad6fd71352e62d07d&ascene=1&uin=MjkxNjk0ODI0Mw%3D%3D&devicetype=Windows+10+x64&version=62090529&lang=zh_CN&exportkey=A3lJat8CcGw45LpAnlsW%2FGM%3D&pass_ticket=VppEGP1B0AfJWYqYwdM8pPyMH7m4OryaKADCKmwWeWw0Aqb6p0ZsQHgTfx%2BwvxF%2F&wx_header=0
+
+Nagle 算法是一种通过减少数据包的方式提高 TCP 传输性能的算法[^4]。因为网络 带宽有限，它不会将小的数据块直接发送到目的主机，而是会在本地缓冲区中等待更多待发送的数据，这种批量发送数据的策略虽然会影响实时性和网络延迟，但是能够降低网络拥堵的可能性并减少额外开销。
+
+TCP 协议粘包问题是因为应用层协议开发者的错误设计导致的，他们忽略了 TCP 协议数据传输的核心机制 — 基于字节流，其本身不包含消息、数据包等概念，所有数据的传输都是流式的，需要应用层协议自己设计消息的边界，即消息帧（Message Framing），我们重新回顾一下粘包问题出现的核心原因：
+
+1. TCP 协议是基于字节流的传输层协议，其中不存在消息和数据包的概念；
+2. 应用层协议没有使用基于长度或者基于终结符的消息边界，导致多个消息的粘连；
+
 ## UDP实现可靠
 
 https://zhuanlan.zhihu.com/p/30770889
@@ -369,14 +378,7 @@ TCP协议保证数据传输可靠性的方式主要有：
 
 因为连续收到三次相同 ACK 证明当前网络状况是 ok 的，那么确认是丢包了，于是立马重发，没必要等这么久。
 
-### TIME_WAIT （**报文最大生存时间**）过多有什么危害？
 
-- 第一是内存资源占用；
-- 第二是对端口资源的占用，一个 TCP 连接至少消耗一个本地端口；
-
-如何优化 TIME_WAIT？
-
-引入了时间戳，我们在前面提到的 `2MSL` 问题就不复存在了，因为重复的数据包会因为时间戳过期被自然丢弃。
 
 ### TCP Socket 编程
 
@@ -463,9 +465,16 @@ Duplicate SACK 又称 `D-SACK`，其主要**使用了 SACK 来告诉「发送方
 
 所以把控制的逻辑独立出来成 TCP 层，让真正的接收端来处理，这样网络整体的传输效率就高了。
 
+
+
 ### 大量的 TIME_WAIT 状态 TCP 连接
 
 https://jishuin.proginn.com/p/763bfbd29315
+
+危害：
+
+- 第一是内存资源占用；
+- 第二是对端口资源的占用，一个 TCP 连接至少消耗一个本地端口；
 
 大量的 `TIME_WAIT` 状态 TCP 连接存在，其本质原因是什么？
 
@@ -599,6 +608,10 @@ https://www.cnblogs.com/handsomeBoys/p/6556336.html
 
 客户端然后验证证书相关的域名信息、有效时间等信息；
 
+证书包含以下信息：申请者公钥、申请者的组织信息和个人信息、签发机构 CA 的信息、有效时间、证书序列号等信息的明文，同时包含一个签名；
+
+签名的产生算法：首先，使用散列函数计算公开的明文信息的信息摘要，然后，采用 CA 的私钥对信息摘要进行加密，密文即签名；
+
 ## HTTP格式
 
 请求
@@ -693,6 +706,26 @@ HTTP/2 是可以在**一个连接中并发多个请求或回应，而不用按�
 HTTP/2 还在一定程度上改善了传统的「请求 - 应答」工作模式，服务不再是被动地响应，也可以**主动**向客户端发送消息。
 
 举例来说，在浏览器刚请求 HTML 的时候，就提前把可能会用到的 JS、CSS 文件等静态资源主动发给客户端，**减少延时的等待**，也就是服务器推送（Server Push，也叫 Cache Push）。
+
+## [解析HTTP请求报文](https://segmentfault.com/a/1190000007403846)
+
+https://segmentfault.com/a/1190000007403846
+
+### 解析思想
+
+遍历recv接受到的请求字符串，检查是否遇到回车符**r**判断一行数据。
+
+对于起始行，检查是否遇到空格分隔不同的字段；对于首部，检查是否遇到冒号分隔键值对的字段值；对于实体的主体部分，则先判断是否遇到CRLF字符串，然后将剩余内容全部作为实体的主体部分。
+
+返回值是告知程序下一次遍历的起始位置。
+
+如果遇到非法请求行则返回400的响应。
+
+## http劫持
+
+https://juejin.im/post/6844903991764058126#comment
+
+
 
 ## 为什么ip数据包最小要64字节
 
@@ -1401,6 +1434,10 @@ https://blog.csdn.net/FX677588/article/details/70767446
 
 缺点：与AVL相比高度更大，所以查询比AVL慢一丢丢
 
+## Log Structured Merge Trees(LSM) 原理
+
+https://www.open-open.com/lib/view/open1424916275249.html
+
 # ZooKeeper
 
 ## 解决的问题
@@ -1612,11 +1649,15 @@ https://hiberabyss.github.io/2018/03/13/shared-memory/
 
 是在多线程环境下使用的一种设施, 它负责协调各个线程, 以保证它们能够正确、合理的使用公共资源。
 
-## Cache一致性协议之MESI
+## Cache一致性协议之MESI  原子操作
 
 https://blog.csdn.net/muxiqingyang/article/details/6615199
 
+https://zhuanlan.zhihu.com/p/33445834
+
 ![image-20200627093730629](README.assets/image-20200627093730629.png)
+
+当运行在某个cpu核的线程准备读取某个cache line的内容时，如果状态处于M,E,S，直接读取即可。如果状态处于I，则需要向其他cpu核广播读消息，在接受到其他cpu核的读响应后，更新cache line，并将状态设置为S。而当线程准备写入某个cache line时，如果处于M状态，直接写入。如果处于E状态，写入并将cache line状态改为M。如果处于S，则需要向其他cpu核广播使无效消息，并进入E状态，写入修改，后进入M状态。如果处于I，则需要向其他cpu核广播读消息核使无效消息，在收集到读响应后，更新cache line。在收集到使无效响应后，进入E状态，写入修改，后进入M状态。
 
 ## 进程切换与线程切换
 
@@ -1735,6 +1776,8 @@ https://zhuanlan.zhihu.com/p/52845869
 所以，**系统调用过程通常称为特权模式切换，而不是上下文切换。系统调用属于同进程内的 CPU 上下文切换**。但实际上，系统调用过程中，CPU 的上下文切换还是无法避免的。
 
 ## IO多路复用select/poll/epoll
+
+https://cloud.tencent.com/developer/article/1005481
 
 https://blog.csdn.net/daaikuaichuan/article/details/83862311
 
@@ -1901,6 +1944,16 @@ ET:边缘触发
 ### Linux常用命令
 
 https://juejin.im/post/6844903940690034702
+
+### linux指令
+
+top命令
+
+https://www.cnblogs.com/peida/archive/2012/12/24/2831353.html
+
+显示当前系统正在执行的进程的相关信息，包括进程ID、内存占用率、CPU占用率等
+
+
 
 ## Netty Reactor模型
 
@@ -2163,8 +2216,6 @@ https://www.cnblogs.com/huxiao-tee/p/4657851.html
 
 7、文件内容读取成功。
 
- 
-
 **写文件**
 
 前5步和读文件一致，在address_space中查询对应页的页缓存是否存在：
@@ -2180,6 +2231,18 @@ https://www.cnblogs.com/huxiao-tee/p/4657851.html
 （2）pdflush进程会定时把脏页写回到磁盘
 
 同时注意，脏页不能被置换出内存，如果脏页正在被写回，那么会被设置写回标记，这时候该页就被上锁，其他写请求被阻塞直到锁释放。
+
+## 简单函数的调用原理
+
+https://zhuanlan.zhihu.com/p/64915630
+
+## 锁为什么是低效的
+
+https://www.icode9.com/content-4-278303.html
+
+锁一般是基于**原子操作**和**内存屏障来**实现的，往往还会导致**高速缓存未命中**。这是锁为什么低效的原因。简单来说，对于互斥锁而言，锁依靠原子操作来实现资源访问者对临界区拥有唯一的读写权；依靠内存屏障来禁止临界区内代码代码优化，包括编译器编译优化和CPU指令乱序优化。因为禁止优化，导致了锁保护的临界区内的数据缓存命中率低。
+
+再加上挂起，和自旋
 
 # 设计模式
 
@@ -2239,6 +2302,15 @@ public enum Singleton{
 ## 为什么要指令重排
 
 https://www.jianshu.com/p/c6f190018db1
+
+| 步骤                | 描述                             |
+| :------------------ | :------------------------------- |
+| 取指（fetch）       | 根据PC值，从存储器中读取指令字节 |
+| 译码（decode）      | 从寄存器文件读入最多两个操作数   |
+| 执行（execute）     | 执行指令指明的操作               |
+| 访存（memory）      | 将数据写入存储器                 |
+| 写回（write back）  | 最多可以写两个结果到寄存器文件   |
+| 更新PC（PC update） | 将PC设置下一条指令的地址         |
 
 指令集并行的重排序是对CPU的性能优化，从指令的执行角度来说一条指令可以分为多个步骤完成，如下:
 
@@ -2364,6 +2436,22 @@ https://developer.aliyun.com/article/726412
 调用线程发出请求后，在没有得到结果前，该调用就返回了，整个过程调用线程不会被挂起。
 
 # Java
+
+## Java和C++
+
+https://blog.csdn.net/SHENNONGZHAIZHU/article/details/51897060?utm_medium=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf
+
+1、Java为解释性语言，其运行过程为：程序源代码经过Java编译器编译成字节码，然后由JVM解释执行。而C/C++为编译型语言，源代码经过编译和链接后生成可执行的二进制代码，可直接执行。因此Java的执行速度比C/C++慢，但Java能够跨平台执行，C/C++不能。
+
+2、Java是纯面向对象语言，所有代码（包括函数、变量）必须在类中实现，除基本数据类型（包括int、float等）外，所有类型都是类。此外，Java语言中不存在全局变量或者全局函数，而C++兼具面向过程和面向对象编程的特点，可以定义全局变量和全局函数。
+
+3、与C/C++语言相比，Java语言中没有指针的概念，这有效防止了C/C++语言中操作指针可能引起的系统问题，从而使程序变得更加安全。
+
+4、与C++语言相比，Java语言不支持多重继承，但是Java语言引入了接口的概念，可以同时实现多个接口。由于接口也有多态特性，因此Java语言中可以通过实现多个接口来实现与C++语言中多重继承类似的目的。
+
+5、在C++语言中，需要开发人员去管理内存的分配（包括申请和释放），而Java语言提供了垃圾回收器来实现垃圾的自动回收，不需要程序显示地管理内存的分配。在C++语言中，通常会把释放资源的代码放到析构函数中，Java语言中虽然没有析构函数，但却引入了一个finalize()方法，当垃圾回收器要释放无用对象的内存时，会首先调用该对象的finalize()方法，因此，开发人员不需要关心也不需要知道对象所占的内存空间何时被释放。
+
+游戏，偏底层的系统：操作系统，数据库，中间件，编译器等等  用C++
 
 ## 为什么synchronized无法禁止指令重排，却能保证有序性？
 
@@ -3170,6 +3258,8 @@ select * from sunyang where id='123';
 
 https://zhuanlan.zhihu.com/p/64576887
 
+https://zhuanlan.zhihu.com/p/64576887
+
 版本链
   对于使用InnoB引擎的表来说，它的聚簇索引记录中都包含两个必要的隐藏列：
 
@@ -3177,6 +3267,22 @@ https://zhuanlan.zhihu.com/p/64576887
     roll_pointer：每次对某条聚簇索引记录进行改动时，都会把旧的版本写入到undo日志中，然后这个隐藏列就相当于一个指针，可以通过它来找到该记录修改前的信息。
 
   每次对记录改动，都会记录一条undo日志，每条undo日志也都有一个roll_pointer属性（INSERT操作对应的undo日志没有该属性，因为该记录并没有更早的版本），将这条数据的undo日志组成一个链表；即为版本链。版本链的头节点就是当前记录的最新值。
+
+## MVCC中的**ReadView**（可读视图）
+
+说完了undo log我们再来看看ReadView。已提交读和可重复读的区别就在于它们生成ReadView的策略不同。
+
+ReadView中主要就是有个列表来存储我们系统中当前活跃着的读写事务，也就是begin了还未提交的事务。通过这个列表来判断记录的某个版本是否对当前事务可见。其中最主要的与可见性相关的属性如下：
+
+**up_limit_id**：当前已经提交的事务号 + 1，事务号 < up_limit_id ，对于当前Read View都是可见的。理解起来就是创建Read View视图的时候，之前已经提交的事务对于该事务肯定是可见的。
+
+**low_limit_id**：当前最大的事务号 + 1，事务号 >= low_limit_id，对于当前Read View都是不可见的。理解起来就是在创建Read View视图之后创建的事务对于该事务肯定是不可见的。
+
+**trx_ids**：为活跃事务id列表，即Read View初始化时当前未提交的事务列表。所以当进行RR读的时候，trx_ids中的事务对于本事务是不可见的（除了自身事务，自身事务对于表的修改对于自己当然是可见的）。理解起来就是创建RV时，将当前活跃事务ID记录下来，后续即使他们提交对于本事务也是不可见的。
+
+用一张图更好的理解一下：
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/v2-fef7954f5e3c7713f48b35597e7f9fb8_720w.jpg)
 
 ## 日志 redo undo binlog
 
@@ -3525,7 +3631,30 @@ https://blog.csdn.net/plg17/article/details/78758593
 
 比如，row1事务2上写锁，事务1上读锁，那么事务1就要等事务2，就是说事务1指向事务2，可以用深度遍历，如果存在环，那么挑一个undo log量最小的来进行回滚。
 
+## 数据恢复策略
 
+https://www.cnblogs.com/gxcstyle/p/6881477.html
+
+系统故障
+系统故障的恢复是由系统在重新启动时候自动完成的，不需要用户干预。
+系统的恢复步骤是：
+（1）正向扫描日志文件（即从头扫描日志文件），找出在故障发生前已经提交的事务（这些事务既有BEGIN TRANSACTION记录，也有COMMIT记录），将其事务标识记入重做（REDO）队列。同时找出故障发生时尚未完成的事务（这些事务只有BEGIN TRANSACTION记录，无相应的COMMIT记录）,将其事务标识记入撤销队列。
+（2）对撤销队列中的各个事务进行撤销（UNDO）处理。
+进行UNDO处理的方法是，反向扫描日志文件，对每一个UNDO事务的更新操作执行逆操作，将将日志记录中"更新前的值"写入数据库（该方法和事务故障的解决方法一致）。
+（3）对重做队列中的各个事务进行重做（REDO）处理。
+进行REDO处理的方法是：正向扫描日志文件，对每一个REDO事务从新执行日志文件登记的操作。即将日志记录中"更新后的值"写入数据库。
+
+## MySqlr如何建立连接
+
+https://my.oschina.net/alchemystar/blog/833598
+
+![handshake](https://gitee.com/xurunxuan/picgo/raw/master/img/07205636_YA23.png)
+
+Step1:客户端向DB发起TCP握手。
+Step2:三次握手成功。与通常流程不同的是，由DB发送HandShake信息。这个Packet里面包含了MySql的能力、加密seed等信息。
+Step3:客户端根据HandShake包里面的加密seed对MySql登录密码进行摘要后，构造Auth认证包发送给DB。
+Step4:DB接收到客户端发过来的Auth包后会对密码摘要进行比对，从而确认是否能够登录。如果能，则发送Okay包返回。
+Step5:客户端与DB的连接至此完毕。
 
 # Spring
 
@@ -4412,26 +4541,46 @@ https://juejin.im/post/6844904104251097095
 ## 整数与IP地址间的转换
 
 ```
-链接：https://www.nowcoder.com/questionTerminal/66ca0e28f90c42a196afd78cc9c496ea?f=discussion
-来源：牛客网
-
-#include<iostream>
-#include<stack>
-#include<string>
-using namespace std;
-
-int main()
-{
-unsigned int a,b,c,d;
-char ch;
-while(cin>>a>>ch>>b>>ch>>c>>ch>>d)
-    {
-cout<<((a<<24)|(b<<16)|(c<<8)|d)<<endl;
-cin>>a;
-cout<<((a&0xff000000)>>24)<<"."<<((a & 0x00ff0000)>>16)<<"."<<((a&0x0000ff00)>>8)<<"."<<(a & 0x000000ff)<<endl;
+/**
+ * 将 ip 字符串转换为 int 类型的数字
+ * <p>
+ * 思路就是将 ip 的每一段数字转为 8 位二进制数，并将它们放在结果的适当位置上
+ *
+ * @param ipString ip字符串，如 127.0.0.1
+ * @return ip字符串对应的 int 值
+ */
+public static long ip2Int(String ipString) {
+    // 取 ip 的各段
+    String[] ipSlices = ipString.split("\\.");
+    long rs = 0;
+    for (int i = 0; i < ipSlices.length; i++) {
+        // 将 ip 的每一段解析为 long，并根据位置左移 8 位
+        long intSlice = Integer.parseInt(ipSlices[i]) << 8 * i;
+        // 求与
+        rs = rs | intSlice;
     }
-return 0;
+    return rs;
+}
+```
 
+```text
+/**
+ * 将 int 转换为 ip 字符串
+ *
+ * @param ipInt 用 int 表示的 ip 值
+ * @return ip字符串，如 127.0.0.1
+ */
+public static String int2Ip(int ipInt) {
+    String[] ipString = new String[4];
+    for (int i = 0; i < 4; i++) {
+        // 每 8 位为一段，这里取当前要处理的最高位的位置
+        int pos = i * 8;
+        // 取当前处理的 ip 段的值
+        long and = ipInt & (255 << pos);
+        // 将当前 ip 段转换为 0 ~ 255 的数字，注意这里必须使用无符号右移
+        ipString[i] = String.valueOf(and >>> pos);
+    }
+    return String.join(".", ipString);
 }
 ```
 
@@ -4972,6 +5121,10 @@ https://juejin.im/post/6844903696275341319#heading-11
 
 https://cloud.tencent.com/developer/article/1151534
 
+面试常问智力题40道（逻辑题）+ 参考答案
+
+https://www.nowcoder.com/discuss/526897?type=2&order=3&pos=3&page=2&channel=1009&source_id=discuss_tag
+
 ## 详解十二小球问题：天平称三次最多可以对付几个球？
 
 
@@ -5177,6 +5330,20 @@ https://www.cnblogs.com/boanxin/p/13059004.html
 ## 游戏实现实时性
 
 https://juejin.im/entry/6844903486635655176
+
+## 微信朋友圈的技术思路
+
+https://cloud.tencent.com/developer/article/1082731
+
+https://www.toutiao.com/i6227927850301784577/ 
+
+## 百亿级微信红包的高并发资金交易系统设计方案
+
+https://www.infoq.cn/article/2017hongbao-weixin
+
+ 通过分流+队列+流控解决高并发场景下库存锁竞争的情况；
+\- 通过事务操作串行化保证资金安全，避免出现红包超发、漏发、重复发的情况；
+\- 通过红包ID+循环天双维度分库表规则提升系统性能；
 
 # ES
 
