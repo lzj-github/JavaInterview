@@ -92,6 +92,28 @@ TCP 模块在执行连接、收发、断开等各阶段操作时，都需要委�
 
 最后浏览器获得数据后进行渲染就能呈现出页面出来了
 
+
+
+## 为什么DNS用udp
+
+https://www.zhihu.com/question/310145373
+
+采用TCP传输，则域名解析时间为：
+
+DNS域名解析时间 = TCP连接时间 + DNS交易时间
+
+采用UDP传输，则域名解析时间为：
+
+DNS域名解析时间 = DNS交易时间
+
+很显然，采用UDP传输，DNS域名解析时间更小。
+
+在很多时候，用户在访问一些冷门网站时，由于DNS服务器没有冷门网站的解析缓存，需要到域名根服务器、一级域名服务器、二级域名服务器迭代查询，直到查询到冷门网站的权威服务器，这中间可能涉及到多次的查询。
+
+如果使用TCP传输，多几次查询，就多几次TCP连接时间，这多出来的时间不容小觑
+
+
+
 ## 网络协议为什么分层
 
 (1)各层之间是独立的。某一层并不需要知道它的下一层是如何实现的，而仅仅需要知道该层通过层间的接口所提供的服务。这样，整个问题的复杂程度就下降了。也就是说上一层的工作如何进行并不影响下一层的工作，这样我们在进行每一层的工作[设计](https://www.applysquare.com/fos-cn/design/)时只要保证接口不变可以随意调整层内的工作方式。
@@ -194,6 +216,12 @@ URG(urgent)：紧急标志，用于保证TCP连接不被中断，并且督促中
 
 
 ![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZeo9xBVAyPJ8iaWCC6sYS8431Mymq2yPGjMPGodSEg8b31eoyQbibzGjDEHiaQUUDlbvCEwcXN3aicOTw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
+
+### tcp慢开始，为什么指数级别还叫慢开始
+
+tcp/ip卷一上有说，虽然窗口是指数增加，但是相比于一开始就选择大窗口，仍然较慢
 
 
 
@@ -529,6 +557,68 @@ net.ipv4.tcp_tw_reuse = 1
 
 > 既然TIME_WAIT不是为了阻止新连接，那么只要能证明自己确实属于新连接而不是老连接的残留数据，那么该连接即使匹配到了TIME_WAIT的四元组也是可以接受的，即可以重用TIME_WAIT的连接。如何来保证呢？很简单，只需要把老的数据丢在窗口外即可。为此，只要新连接的初始序列号比老连接的FIN包末尾序列号大，那么老连接的所有数据即使迟到也会落在窗口之外，从而不会破坏新建连接！ 即使不使用序列号，还是可以使用时间戳，因为TCP/IP规范规定IP地址要是唯一的，根据这个唯一性，欲重用TIME_WAIT连接的新连接的必然发自同一台机器，而机器时间是单调递增不能倒流的，因此只要新连接带有时间戳且其值比老连接FIN时的时间戳大，就认为该新连接是可以接受的，时间戳重用TW连接的机制的前提是IP地址唯一性导出的发起自同一台机器，那么不满足该前提的则不能基于此来重用TIME_WAIT连接，因此NAT环境不能这么做遍成了自然而然的结论。
 
+
+
+### SYN Cookies
+
+> 在最常见的SYN Flood攻击中，攻击者在短时间内发送大量的TCP SYN包给受害者。受害者(服务器)为每个TCP SYN包分配一个特定的数据区，只要这些SYN包具有不同的源地址(攻击者很容易伪造)。这将给TCP服务器造成很大的系统负担，最终导致系统不能正常工作。
+
+>  SYN Cookie是对TCP服务器端的三次握手做一些修改，专门用来防范SYN Flood攻击的一种手段。它的原理是，在TCP服务器接收到TCP SYN包并返回TCP SYN + ACK包时，**不分配一个专门的数据区，而是根据这个SYN包计算出一个cookie值**。这个cookie作为将要返回的SYN ACK包的初始序列号。当[客户端]()返回一个ACK包时，根据包头信息计算cookie，与返回的确认序列号(初始序列号 + 1)进行对比，如果相同，则是一个正常连接，然后，分配资源，建立连接。
+>
+> cookie的计算：服务器收到一个SYN包，计算一个消息摘要mac。
+
+作者：OFFER—PLSxD
+链接：https://www.nowcoder.com/discuss/530380?type=2&channel=1009&source_id=discuss_terminal_discuss_hot
+来源：牛客网
+
+
+
+### tcp 异常
+
+试图与一个不存在的端口建立连接
+
+> 这符合触发发送RST分节的条件，目的为某端口的SYN分节到达，而端口没有监听，那么内核会立即响应一个RST，表示出错。[客户端]()TCP收到这个RST之后则放弃这次连接的建立，并且返回给应用程序一个错误。正如上面所说的，建立连接的过程对应用程序来说是不可见的，这是操作系统帮我们来完成的，所以即使进程没有启动，也可以响应[客户端]()。
+
+试图与一个不存在的主机上面的某端口建立连接
+
+> 这也是一种比较常见的情况，当某台服务器主机宕机了，而[客户端]()并不知道，仍然尝试去与其建立连接。根据上面的经验，这次主机已经处于未启动状态，操作系统也帮不上忙了，那么也就是连RST也不能响应给[客户端]()，此时服务器端是一种完全没有响应的状态。那么此时[客户端]()的TCP会怎么办呢？据书上介绍，如果[客户端]()TCP没有得到任何响应，那么等待6s之后再发一个SYN，若无响应则等待24s再发一个，若总共等待了75s后仍未收到响应就会返回ETIMEDOUT错误。这是TCP建立连接自己的一个保护机制，但是我们要等待75s才能知道这个连接无法建立，对于我们所有服务来说都太长了。更好的做法是在代码中给connect设置一个超时时间，使它变成我们可控的，让等待时间在毫秒级还是可以接收的。
+
+Server进程被阻塞
+
+> 由于某些情况，服务器端进程无法响应任何请求，比如所在主机的硬盘满了，导致进程处于完全阻塞，通常我们测试时会用gdb模拟这种情况。上面提到过，建立连接的过程对应用程序是不可见的，那么，这时连接可以正常建立。当然，[客户端]()进程也可以通过这个连接给服务器端发送请求，服务器端TCP会应答ACK表示已经收到这个分节（这里的收到指的是数据已经在内核的缓冲区里准备好，由于进程被阻塞，无法将数据从内核的缓冲区复制到应用程序的缓冲区），但永远不会返回结果。
+
+我们杀死server
+
+>  这是线上最常见的操作，当一个模块上线时，OP同学总是会先把旧的进程杀死，然后再启动新的进程。那么在这个过程中TCP连接发生了什么呢。在进程正常退出时会自动调用close函数来关闭它所打开的文件描述符，这相当于服务器端来主动关闭连接——会发送一个FIN分节给[客户端]()TCP；[客户端]()要做的就是配合对端关闭连接，TCP会自动响应一个ACK，然后再由[客户端]()应用程序调用close函数，也就是我们上面所描述的关闭连接的4次挥手过程。接下来，[客户端]()还需要定时去重连，以便当服务器端进程重新启动好时[客户端]()能够继续与之通信。
+
+>  当然，我们要保证[客户端]()随时都可以响应服务器端的断开连接请求，就必须不能让[客户端]()进程再任何时刻阻塞在任何其他的输入上面。比如，书上给的例子是[客户端]()进程会阻塞在标准输入上面，这时如果服务器端主动断开连接，显然[客户端]()不能立刻响应，因为它还在识图从标准输入读一段文本……当然这在实际中很少遇到，如果有多输入源这种情况的话开通通常会用类似select功能的函数来处理，可以同时监控多个输入源是否准备就绪，可以避免上述所说的不能立即响应对端关闭连接的情况。
+
+Server进程所在的主机关机
+
+> 实际上这种情况不会带来什么更坏的后果。在系统关闭时，init进程会给所有进程发送SIGTERM信号，等待一段时间（5~20秒），然后再给所有仍在运行的进程发送SIGKILL信号。当服务器进程死掉时，会关闭所有文件描述符。带来的影响和上面杀死server相同。
+
+Server进程所在的主机宕机
+
+>  这是我们线上另一种比较常见的状况。即使宕机是一个小概率事件，线上几千台服务器动不动一两台挂掉也是常有的事。主机崩溃不会像关机那样会预先杀死上面的进程，而是突然性的。那么此时我们的[客户端]()准备给服务器端发送一个请求，它由write写入内核，由TCP作为一个分节发出，随后客户阻塞于read的调用（等待接收结果）。对端TCP显然不会响应这个分节，因为主机已经挂掉，于是[客户端]()TCP持续重传分节，试图从服务器上接收一个ACK，然而服务器始终不能应答，重传数次之后，大约4~10分钟才停止，之后返回一个ETIMEDOUT错误。
+
+> 这样尽管最后还是知道对方不可达，但是很多时候我们希望比等待4~10分钟更快的知道这个结果。可以为read设置一个超时时间，就得到了一个较好的解决方法。但是这样还是需要等待一个超时时间，事实上TCP为我们提供了更好的方法，用SO_KEEPALIVE的套接字选项——相当于心跳包，每隔一段时间给对方发送一个心跳包，当对方没有响应时会一更短的时间间隔发送，一段时间后仍然无响应的话就断开这个连接。
+
+服务器进程所在的主机宕机后重启
+
+>  在[客户端]()发出请求前，服务器端主机经历了宕机——重启的过程。当[客户端]()TCP把分节发送到服务器端所在的主机，服务器端所在主机的TCP丢失了崩溃前所有连接信息，即TCP收到了一个根本不存在连接上的分节，所以会响应一个RST分节。如果开发的代码足够健壮的话会试图重新建立连接，或者把这个请求转发给其他服务器。
+>
+> 当TCP连接的进程在忘记关闭Socket而退出、程序崩溃、或非正常方式结束进程的情况下（Windows[客户端]()），会导致TCP连接的对端进程产生“104: Connection reset by peer”（Linux下）或“10054: An existing connection was forcibly closed by the remote host”（Windows下）错误
+>
+> 当TCP连接的进程机器发生死机、系统突然重启、网线松动或网络不通等情况下，连接的对端进程可能检测不到任何异常，并最后等待“超时”才断开TCP连接
+>
+> 当TCP连接的进程正常关闭Socket时，对端进程在检查到TCP关闭事件之前仍然向TCP发送消息，则在Send消息时会产生“32: Broken pipe”（Linux下）或“10053: An established connection was aborted by the software in your host machine”（Windows下）错误
+>
+> 当TCP连接的对端进程已经关闭了Socket的情况下，本端进程再发送数据时，第一包可以发送成功（但会导致对端发送一个RST包过来）：
+> 之后如果再继续发送数据会失败，错误码为“10053: An established connection was aborted by the software in your host machine”（Windows下）或“32: Broken pipe，同时收到SIGPIPE信号”（Linux下）错误；
+> 之后如果接收数据，则Windows下会报10053的错误，而Linux下则收到正常关闭消息
+>
+> TCP连接的本端接收缓冲区中还有未接收数据的情况下close了Socket，则本端TCP会向对端发送RST包，而不是正常的FIN包，这就会导致对端进程提前（RST包比正常数据包先被收到）收到“10054: An existing connection was forcibly closed by the remote host”（Windows下）或“104: Connection reset by peer”（Linux下）错误
+
 ## http的理解
 
 https://mp.weixin.qq.com/s/amOya0M00LwpL5kCS96Y6w
@@ -594,15 +684,62 @@ HTTP 比较严重的缺点就是不安全：
 
 https://mp.weixin.qq.com/s/amOya0M00LwpL5kCS96Y6w
 
-![image-20200807114710930](README.assets/image-20200807114710930.png)
+https://mp.weixin.qq.com/s/21JaXwdfSjItj5SgOwhapg
 
-如何保证公钥不被篡改和信任度
+![img](https://mmbiz.qpic.cn/sz_mmbiz_png/VMORHafhQIMVgicZXOeicEJscQFXU3y2ibpuVYnibFtWRHyE2TXYlsS8oZiaQbK6cia4ic310qicVxlpPXgj3TP0q2mxpA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
 
-![img](https://mmbiz.qpic.cn/mmbiz_jpg/J0g14CUwaZfXG1113Sjm0iaOXfoOv0tlUibyiaEab7NMrTn632LZmYQe5qaibibT0xsOs7ic6u98ypWJBjbPMzOUCb2g/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+1. 用户在浏览器发起HTTPS请求（如 https://www.mogu.com/），默认使用服务端的443端口进行连接；
+2. HTTPS需要使用一套**CA数字证书**，证书内会附带一个**公钥Pub**，而与之对应的**私钥Private**保留在服务端不公开；
+3. 服务端收到请求，返回配置好的包含**公钥Pub**的证书给客户端；
+4. 客户端收到**证书**，校验合法性，主要包括是否在有效期内、证书的域名与请求的域名是否匹配，上一级证书是否有效（递归判断，直到判断到系统内置或浏览器配置好的根证书），如果不通过，则显示HTTPS警告信息，如果通过则继续；
+5. 客户端生成一个用于对称加密的**随机Key**，并用证书内的**公钥Pub**进行加密，发送给服务端；
+6. 服务端收到**随机Key**的密文，使用与**公钥Pub**配对的**私钥Private**进行解密，得到客户端真正想发送的**随机Key**；
+7. 服务端使用客户端发送过来的**随机Key**对要传输的HTTP数据进行对称加密，将密文返回客户端；
+8. 客户端使用**随机Key**对称解密密文，得到HTTP数据明文；
+9. 后续HTTPS请求使用之前交换好的**随机Key**进行对称加解密。
+
+
+
+### 怎么保证证书有效
+
+私钥除了解密外的真正用途其实还有一个，就是**数字签名**，其实就是一种防伪技术，只要有人篡改了证书，那么数字签名必然校验失败。具体过程如下
+
+1. CA机构拥有自己的一对公钥和私钥
+2. CA机构在颁发证书时对证书明文信息进行哈希
+3. 将哈希值用私钥进行**加签**，得到数字签名
+
+##### 明文数据和数字签名组成证书，传递给客户端。
+
+1. 客户端得到证书，分解成明文部分Text和数字签名Sig1
+2. 用CA机构的公钥进行**解签**，得到Sig2（由于CA机构是一种公信身份，因此在系统或浏览器中会内置CA机构的证书和公钥信息）
+3. 用证书里声明的哈希算法对明文Text部分进行哈希得到H
+4. 当自己计算得到的哈希值T与**解签**后的Sig2**相等**，表示证书可信，**没有被篡改**
+
+
 
 验证过程
 
 https://www.cnblogs.com/handsomeBoys/p/6556336.html
+
+https://blog.csdn.net/baidu_36649389/article/details/53240579
+
+**1，数字证书有效期验证**
+
+   **就是说证书的使用时\**间要在起始时间\**和结束时间之内。通过解析证书很容易得到证书的有效期**
+
+**2，根证书验证**
+
+   **先来理解一下什么是根证书？** 根证书已经在浏览器中
+
+   **普通的证书一般包括三部分：用户信息，用户公钥，以及CA签名** 
+
+   **那么我们要验证这张证书就需要验证CA签名的真伪。那么就需要CA公钥。而CA公钥存在于另外一张证书（称这张证书是对普通证书签名的证书）中。因此我们又需要验证这另外一张证书的真伪。因此又需要验证另另外证书（称这张证书是对另外一张证书签名的证书）的真伪。依次往下回溯，就得到一条证书链。那么这张证书链从哪里结束呢？就是在根证书结束（即验证到根证书结束）。根证书是个很特别的证书，它是CA中心自己给自己签名的证书（即这张证书是用CA公钥对这张证书进行签名）。信任这张证书，就代表信任这张证书下的证书链。**
+
+  **所有用户在使用自己的证书之前必须先下载根证书。**
+
+  **所谓根证书验证就是：用根证书公钥来验证该证书的颁发者签名。所以首先必须要有根证书，并且根证书必须在受信任的证书列表（即信任域）**
+
+
 
  读取证书中的相关的明文信息，采用相同的散列函数计算得到信息摘要，然后，利用对应 CA 的公钥解密签名数据，对比证书的信息摘要，如果一致，则可以确认证书的合法性，即公钥合法；
 
@@ -611,6 +748,8 @@ https://www.cnblogs.com/handsomeBoys/p/6556336.html
 证书包含以下信息：申请者公钥、申请者的组织信息和个人信息、签发机构 CA 的信息、有效时间、证书序列号等信息的明文，同时包含一个签名；
 
 签名的产生算法：首先，使用散列函数计算公开的明文信息的信息摘要，然后，采用 CA 的私钥对信息摘要进行加密，密文即签名；
+
+
 
 ## HTTP格式
 
@@ -645,6 +784,8 @@ https://juejin.im/entry/58d7635e5c497d0057fae036
 HTTP 并未规定不可以 GET 中发送 Body 内容，但却不少知名的工具不能用 GET 发送 Body 数据，所以大致的讲我们仍然不推荐使用 GET 携带 Body 内容，还有可能某些应用服务器也会忽略掉 GET 的 Body 数据
 
 ## HTTP1.0、HTTP1.1、HTTP2.0的关系和区别
+
+https://mp.weixin.qq.com/s/bUy220-ect00N4gnO0697A
 
 ![image-20200628101550607](README.assets/image-20200628101550607.png)
 
@@ -689,7 +830,11 @@ HTTP/2 的数据包不是按顺序发送的，同一个连接里面连续的数�
 
 客户端还可以**指定数据流的优先级**。优先级高的请求，服务器就先响应该请求。
 
-![HTT/1 ~ HTTP/2](README.assets/640-20200814103916180)HTT/1 ~ HTTP/2
+![HTT/1 ~ HTTP/2](README.assets/640-20200814103916180)
+
+> *数据流*
+>
+> http://www.blogjava.net/yongboy/archive/2015/03/19/423611.html
 
 *4. 多路复用*
 
@@ -727,15 +872,27 @@ https://juejin.im/post/6844903991764058126#comment
 
 
 
-## 为什么ip数据包最小要64字节
+## 为什么帧最小要64字节
+
+
 
 ![image-20200813143530187](README.assets/image-20200813143530187.png)
 
-因为需要冲突检测	
+因为需要冲突检测	 
 
 ![image-20200813143829212](README.assets/image-20200813143829212.png)
 
 ![image-20200813143848201](README.assets/image-20200813143848201.png)
+
+## MTU最大传输单元
+
+https://developer.aliyun.com/article/222535
+
+其实一个标准的以太网数据帧大小是：`1518`，头信息有14字节，尾部校验和FCS占了4字节，所以真正留给上层协议传输数据的大小就是：1518 - 14 - 4 = 1500
+
+太大会一直占用发送端口，导致其他数据不能及时发送
+
+又因为最小的64字节，数据链路层占用18字节，所以Ip层是64-1500字节
 
 ## 正向代理和反向代理的区别
 
@@ -885,6 +1042,119 @@ CDN 加速，我们可以这么理解：为了减少流氓骚扰，我干脆将�
 ## http协议 301和302的原理及实现  重定向
 
 https://www.cnblogs.com/zengguowang/p/5737002.html
+
+## 网络攻击
+
+### [常见web攻击手段及其防御方式](https://www.cnblogs.com/-new/p/7135814.html)
+
+https://www.cnblogs.com/-new/p/7135814.html
+
+xss攻击（关键是脚本，利用恶意脚本发起攻击），CSRF攻击（关键是借助本地cookie进行认证，伪造发送请求），SQL注入（关键是通过用sql语句伪造参数发出攻击），DDOS攻击（关键是通过手段发出大量请求，最后令服务器崩溃）
+
+## 本文简单介绍几种常见的攻击手段及其防
+
+### [XSS跨站脚本攻击](https://www.cnblogs.com/phpstudy2015-6/p/6767032.html)
+
+https://www.cnblogs.com/phpstudy2015-6/p/6767032.html
+
+**主要原因：**过于信任客户端提交的数据！
+
+**解决办法：**不信任任何客户端提交的数据，只要是客户端提交的数据就应该先进行相应的过滤处理然后方可进行下一步的操作。
+
+**进一步分析细节：**
+
+　　客户端提交的数据本来就是应用所需要的，但是恶意攻击者利用网站对客户端提交数据的信任，在数据中插入一些符号以及javascript代码，那么这些数据将会成为应用代码中的一部分了。那么攻击者就可以肆无忌惮地展开攻击啦。
+
+【不相应用户提交的数据，**过滤过滤过滤！**】
+
+1、将重要的cookie标记为http only, 这样的话Javascript 中的document.cookie语句就不能获取到cookie了.
+
+2、表单数据规定值的类型，例如：年龄应为只能为int、name只能为字母数字组合。。。。
+
+4、对数据进行Html Encode 处理
+
+5、过滤或移除特殊的Html标签， 例如: <script>, <iframe> , &lt; for <, &gt; for >, &quot for
+
+6、过滤JavaScript 事件的标签。例如 "onclick=", "onfocus" 等等。
+
+【特别注意：】
+
+在有些应用中是允许html标签出现的，甚至是javascript代码出现。因此我们在过滤数据的时候需要仔细分析哪些数据是有特殊要求（例如输出需要html代码、javascript代码拼接、或者此表单直接允许使用等等），然后区别处理！
+
+### cookie 和 token 都存放在 header 中，为什么不会劫持 token？
+
+https://github.com/Advanced-Frontend/Daily-Interview-Question/issues/31
+
+> cookie：登陆后后端生成一个sessionid放在cookie中返回给客户端，并且服务端一直记录着这个sessionid，客户端以后每次请求都会带上这个sessionid，服务端通过这个sessionid来验证身份之类的操作。所以别人拿到了cookie拿到了sessionid后，就可以完全替代你。
+
+> token：登陆后后端不返回一个token给客户端，客户端将这个token存储起来，然后每次客户端请求都需要开发者手动将token放在header中带过去，服务端每次只需要对这个token进行验证就能使用token中的信息来进行下一步操作了。
+
+> xss：用户通过各种方式将恶意代码注入到其他用户的页面中。就可以通过脚本获取信息，发起请求，之类的操作。
+
+> csrf：跨站请求攻击，简单地说，是攻击者通过一些技术手段欺骗用户的浏览器去访问一个自己曾经认证过的网站并运行一些操作（如发邮件，发消息，甚至财产操作如转账和购买商品）。由于浏览器曾经认证过，所以被访问的网站会认为是真正的用户操作而去运行。这利用了web中用户身份验证的一个漏洞：**简单的身份验证只能保证请求发自某个用户的浏览器，却不能保证请求本身是用户自愿发出的**。csrf并不能够拿到用户的任何信息，它只是欺骗用户浏览器，让其以用户的名义进行操作。
+
+> csrf例子：假如一家银行用以运行转账操作的URL地址如下： http://www.examplebank.com/withdraw?account=AccoutName&amount=1000&for=PayeeName
+> 那么，一个恶意攻击者可以在另一个网站上放置如下代码： `<img src="<http://www.examplebank.com/withdraw?account=Alice&amount=1000&for=Badman>">`
+> 如果有账户名为Alice的用户访问了恶意站点，而她之前刚访问过银行不久，登录信息尚未过期，那么她就会损失1000资金。
+
+上面的两种攻击方式，如果被xss攻击了，不管是token还是cookie，都能被拿到，所以对于xss攻击来说，cookie和token没有什么区别。但是对于csrf来说就有区别了。
+
+以上面的csrf攻击为例：
+
+- cookie：用户点击了链接，cookie未失效，导致发起请求后后端以为是用户正常操作，于是进行扣款操作。
+- token：用户点击链接，由于浏览器不会自动带上token，所以即使发了请求，后端的token验证不会通过，所以不会进行扣款操作。
+
+XSS： 通过客户端脚本语言（最常见如：JavaScript）
+在一个论坛发帖中发布一段恶意的JavaScript代码就是脚本注入，如果这个代码内容有请求外部服务器，那么就叫做XSS！
+
+CSRF：又称XSRF，冒充用户发起请求（在用户不知情的情况下）,完成一些违背用户意愿的请求（如恶意发帖，删帖，改密码，发邮件等）。
+
+https://segmentfault.com/a/1190000007059639
+
+
+
+## COOKIE和SESSION有什么区别？
+
+作者：轩辕志远
+链接：https://www.zhihu.com/question/19786827/answer/28752144
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+
+
+\1. 由于HTTP协议是无状态的协议，所以服务端需要记录用户的状态时，就需要用某种机制来识具体的用户，这个机制就是Session.典型的场景比如购物车，当你点击下单按钮时，由于HTTP协议无状态，所以并不知道是哪个用户操作的，所以服务端要为特定的用户创建了特定的Session，用用于标识这个用户，并且跟踪用户，这样才知道购物车里面有几本书。这个Session是保存在服务端的，有一个唯一标识。在服务端保存Session的方法很多，内存、数据库、文件都有。集群的时候也要考虑Session的转移，在大型的网站，一般会有专门的Session服务器集群，用来保存用户会话，这个时候 Session 信息都是放在内存的，使用一些缓存服务比如Memcached之类的来放 Session。
+\2. 思考一下服务端如何识别特定的客户？这个时候Cookie就登场了。每次HTTP请求的时候，客户端都会发送相应的Cookie信息到服务端。实际上大多数的应用都是用 Cookie 来实现Session跟踪的，第一次创建Session的时候，服务端会在HTTP协议中告诉客户端，需要在 Cookie 里面记录一个Session ID，以后每次请求把这个会话ID发送到服务器，我就知道你是谁了。有人问，如果客户端的浏览器禁用了 Cookie 怎么办？一般这种情况下，会使用一种叫做URL重写的技术来进行会话跟踪，即每次HTTP交互，URL后面都会被附加上一个诸如 sid=xxxxx 这样的参数，服务端据此来识别用户。
+\3. Cookie其实还可以用在一些方便用户的场景下，设想你某次登陆过一个网站，下次登录的时候不想再次输入账号了，怎么办？这个信息可以写到Cookie里面，访问网站的时候，网站页面的脚本可以读取这个信息，就自动帮你把用户名给填了，能够方便一下用户。这也是Cookie名称的由来，给用户的一点甜头。
+所以，总结一下：
+Session是在服务端保存的一个数据结构，用来跟踪用户的状态，这个数据可以保存在集群、数据库、文件中；
+Cookie是客户端保存用户信息的一种机制，用来记录用户的一些信息，也是实现Session的一种方式。
+
+**session 认证流程：**
+
+- 用户第一次请求服务器的时候，服务器根据用户提交的相关信息，创建对应的 Session
+- 请求返回时将此 Session 的唯一标识信息 SessionID 返回给浏览器
+- 浏览器接收到服务器返回的 SessionID 信息后，会将此信息存入到 Cookie 中，同时 Cookie 记录此 SessionID 属于哪个域名
+- 当用户第二次访问服务器的时候，请求会自动判断此域名下是否存在 Cookie 信息，如果存在自动将 Cookie 信息也发送给服务端，服务端会从 Cookie 中获取 SessionID，再根据 SessionID 查找对应的 Session 信息，如果没有找到说明用户没有登录或者登录失效，如果找到 Session 证明用户已经登录可执行后面操作。
+
+
+作者：秋天不落叶
+链接：https://juejin.im/post/6844904034181070861
+来源：掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+## [请求转发（Forward）和重定向（Redirect）的区别](https://www.cnblogs.com/Qian123/p/5345527.html)
+
+https://www.cnblogs.com/Qian123/p/5345527.html
+
+**forward（转发）**：
+
+是服务器请求资源,服务器直接访问目标地址的URL,把那个URL的响应内容读取过来,然后把这些内容再发给浏览器.浏览器根本不知道服务器发送的内容从哪里来的,因为这个跳转过程实在服务器实现的，并不是在客户端实现的所以客户端并不知道这个跳转动作，所以它的地址栏还是原来的地址.
+
+**redirect（重定向）**：
+
+是服务端根据逻辑,发送一个状态码,告诉浏览器重新去请求那个地址.所以地址栏显示的是新的URL.
+
+转发是服务器行为，重定向是客户端行为。
 
 # Redis
 
@@ -1037,31 +1307,28 @@ redis是基于内存的单线程，在操作不当的情况（比如删除大key
 - Redis 命令只会因为错误的语法而失败（并且这些问题不能在入队时发现），或是命令用在了错误类型的键上面：这也就是说，从实用性的角度来说，失败的命令是由编程错误造成的，而这些错误应该在开发的过程中被发现，而不应该出现在生产环境中。
 - 因为不需要对回滚进行支持，所以 Redis 的内部可以保持简单且快速。
 
-### 缓存击穿解决方案
+## 雪崩
+
+**同一时间大面积失效，那一瞬间Redis跟没有一样**
+
+处理缓存雪崩简单，在批量往**Redis**存数据的时候，把每个Key的失效时间都加个随机值就好了
+
+## 缓存穿透
+
+缓存穿透是指缓存和数据库中都没有的数据，而用户不断发起请求
+
+**缓存穿透**我会在接口层增加校验，比如用户鉴权校验，参数做校验，不合法的参数直接代码Return，比如：id 做基础校验，id <=0的直接拦截等。
+
+**布隆过滤器**
+
+## 缓存击穿解决方案
 
 1.缓存击穿
 
 互斥锁
 第一个拿到锁的去数据库取数据，其他 等待
 
-```
-public String get(key) {
-      String value = redis.get(key);
-      if (value == null) { //代表缓存值过期
-          //设置3min的超时，防止del操作失败的时候，下次缓存过期一直不能load db
-		  if (redis.setnx(key_mutex, 1, 3 * 60) == 1) {  //代表设置成功
-               value = db.get(key);
-                      redis.set(key, value, expire_secs);
-                      redis.del(key_mutex);
-              } else {  //这个时候代表同时候的其他线程已经load db并回设到缓存了，这时候重试获取缓存值即可
-                      sleep(50);
-                      get(key);  //重试
-              }
-          } else {
-              return value;      
-          }
- }
-```
+<img src="https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpytRQo5EwsGvK5H8uEWAVRJSpqGIYTlN2AujNs7mPy362GdCZAGPsaWNwibaRZLxxjocSUgdiaGH8Qw/640?wx_fmt=jpeg&amp;tp=webp&amp;wxfrom=5&amp;wx_lazy=1&amp;wx_co=1" alt="img" style="zoom:67%;" />
 
 2.永不过期
 
@@ -1438,6 +1705,19 @@ https://blog.csdn.net/FX677588/article/details/70767446
 
 https://www.open-open.com/lib/view/open1424916275249.html
 
+## 高性能无锁队列Disruptor
+
+https://juejin.im/post/6844903648875528206#heading-8
+
+- CAS
+- 消除伪共享
+
+cup缓存会加载一行数据，如果是数组的话，会加载数组的几个数据如a b c,假如我只对a进行修改，但是不改其他的。这时如果其他cup对b c修改，那我这行缓存就无效就得从内存拿，这就是伪共享。因为每次只拿一条修改，像计数器一样，这就要消除伪共享
+
+- RingBuffer 
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/164ea1033b955f2e)
+
 # ZooKeeper
 
 ## 解决的问题
@@ -1635,7 +1915,15 @@ https://hiberabyss.github.io/2018/03/13/shared-memory/
 来源：掘金
 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 
+## 虚拟地址到物理地址的映射  分页
 
+
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkZoTKofqkOibHicWGJPwsCjZGRpG077zmMMnRibkVqcVocZz1PxeIuLLMg/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+页表实际上存储在 CPU 的**内存管理单元** （*MMU*） 中，于是 CPU 就可以直接通过 MMU，找出要实际要访问的物理内存地址。
+
+而当进程访问的虚拟地址在页表中查不到时，系统会产生一个**缺页异常**，进入系统内核空间分配物理内存、更新进程页表，最后再返回用户空间，恢复进程的运行。
 
 ## 信号与信号量的区别
 
@@ -1734,6 +2022,17 @@ https://mp.weixin.qq.com/s?__biz=Mzg3MjA4MTExMw==&mid=2247484746&idx=1&sn=c0a7f9
 1. 系统调用，这个上面已经讲解过了，在我公众号之前的文章也有讲解过。其实系统调用本身就是中断，但是软件中断，跟硬中断不同。
 2. 异常：如果当前进程运行在用户态，如果这个时候发生了异常事件，就会触发切换。例如：缺页异常。
 3. 外设中断：当外设完成用户的请求时，会向CPU发送中断信号。
+
+## 内核空间和用户空间
+
+https://www.cnblogs.com/sparkdev/p/8410350.html
+
+操作系统的核心是内核(kernel)，它独立于普通的应用程序，可以访问受保护的内存空间，也有访问底层硬件设备的所有权限。为了保证内核的安全，现在的操作系统一般都强制用户进程不能直接操作内核。这部分为内核空间 其他是用户空间
+
+在内核态下，进程运行在内核地址空间中，此时 CPU 可以执行任何指令。运行的代码也不受任何的限制，可以自由地访问任何有效地址，也可以直接进行端口的访问。
+在用户态下，进程运行在用户地址空间中，被执行的代码要受到 CPU 的诸多检查，它们只能访问映射其地址空间的页表项中规定的在用户态下可访问页面的虚拟地址
+
+**区分内核空间和用户空间本质上是要提高操作系统的稳定性及可用性**
 
 ## 什么是 CPU 上下文切换
 
@@ -1955,6 +2254,30 @@ https://www.cnblogs.com/peida/archive/2012/12/24/2831353.html
 
 
 
+ps -ef|grep xxx 
+
+查某个进程
+
+tail -100 desc.txt
+
+查看文件尾内容
+
+netstat -a
+
+显示网络相关信息
+
+kill -s 9 27810
+
+杀死进程
+
+
+
+ tcpdump
+
+https://juejin.im/post/6844904084168769549#heading-34
+
+
+
 ## Netty Reactor模型
 
 https://juejin.im/post/6844903712435994631#comment
@@ -1998,6 +2321,23 @@ mmap的工作原理，当你发起这个调用的时候，它只是在你的虚�
 上下切换的耗时有大佬统计过，大概在几十纳秒到几微秒之间，如果你锁住的代码执行时间比较短，那可能上下文切换的时间都比你锁住的代码执行时间还要长。
 
 所以，**如果你能确定被锁住的代码执行时间很短，就不应该用互斥锁，而应该选用自旋锁，否则使用互斥锁。**
+
+## Linux 内存管理
+
+https://mp.weixin.qq.com/s?__biz=MzUxODAzNDg4NQ==&mid=2247485033&idx=1&sn=bf9ba7aca126ad186922c57a96928593&chksm=f98e42c3cef9cbd514df38d04deb5e7a9ea67dbd478da75fc4a7636ee90b1384d65f68eb23f5&mpshare=1&scene=1&srcid=0929Ur9auGCTC1n9UBY0FzQF&sharer_sharetime=1601367341613&sharer_shareid=7c323ad8a0150d2a639a51a5c8978bfb&key=aabb5ee173354e5dcf522bcd39e8aa1cf40b72fabe0875e6f0eaa4b27d7ecb23809ce43974e694228da027bf0182ce38b2f14f903528fd044b5d0fe4c3b29fa952c407813bcc4f58024904459155ed163cac13f36b22bf066338ad245f0cf79678bf1a264fc0faaa46d3579ad310288af206dda357c384837be537d14235096e&ascene=1&uin=MjkxNjk0ODI0Mw%3D%3D&devicetype=Windows+10+x64&version=62090529&lang=zh_CN&exportkey=A3ahGDVv4pFZB75vteEHUGs%3D&pass_ticket=xVQ5kNeUfHtkgbP7YNzD5HV1x%2B7EDpTgwlwmOdGo23FSSOePrDbmST9xrvb9AYFF&wx_header=0
+
+**页式内存管理的作用是在由段式内存管理所映射而成的的地址上再加上一层地址映射。**
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkScLhBl6b8h7zMdGJQ30uviaKeonZ3gABkmWghgnlibJw79jib3IOKiaKSA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkLicVe0iaPt3taOrowrLDwibhmGZsic0H8ic1Dv0Z3EMVtk80qzQOOib2CUew/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+- 程序文件段，包括二进制可执行代码；
+- 已初始化数据段，包括静态常量；
+- 未初始化数据段，包括未初始化的静态变量；
+- 堆段，包括动态分配的内存，从低地址开始向上增长；
+- 文件映射段，包括动态库、共享内存等，从低地址开始向上增长（跟硬件和内核版本有关）
+- 栈段，包括局部变量和函数调用的上下文等。栈的大小是固定的，一般是 `8 MB`。当然系统也提供了参数，以便我们自定义大小；
 
 ##  Linux进程标准的内存段布局
 
@@ -2072,6 +2412,16 @@ mmap的工作原理，当你发起这个调用的时候，它只是在你的虚�
 链接：https://www.zhihu.com/question/29005517/answer/43172614
 来源：知乎
 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+## 内存对齐
+
+https://zhuanlan.zhihu.com/p/30007037
+
+尽管内存是以字节为单位，但是大部分处理器并不是按字节块来存取内存的.它一般会以双字节,四字节,8字节,16字节甚至32字节为单位来存取内存，我们将上述这些存取单位称为内存存取粒度.
+
+现在考虑4字节存取粒度的处理器取int类型变量（32位系统），该处理器只能从地址为4的倍数的内存开始读取数据。
+
+假如没有内存对齐机制，数据可以任意存放，现在一个int变量存放在从地址1开始的联系四个字节地址中，该处理器去取数据时，要先从0地址开始读取第一个4字节块,剔除不想要的字节（0地址）,然后从地址4开始读取下一个4字节块,同样剔除不要的数据（5，6，7地址）,最后留下的两块数据合并放入寄存器.这需要做很多工作.
 
 ## 文件描述符
 
@@ -2176,7 +2526,29 @@ PageCache 的优点主要是两个：
 
 
 
-应用程序没有权限直接操作设备，都是交给内核处理的，文中也有提到。你说的没错，这样就有多份一模一样的数据，所以为了减少内存的浪费，就出现了零拷贝技术呀
+问将数据从硬盘加载到系统内存中，又从系统内从中拷贝到应用程序内存中。为啥要这么做？应用程序不能直接去取系统内存吗？如果这样做，我们的内存就有两份一摸一样的数据，这不就浪费内存嘛
+
+应用程序当然没有权限直接操作设备，都是交给内核处理的，文中也有提到。你说的没错，这样就有多份一模一样的数据，所以为了减少内存的浪费，就出现了零拷贝技术呀
+
+### 直接I/O**缓存 I/O** 和原理
+
+https://cloud.tencent.com/developer/news/406991
+
+缓存 I/O 优点：
+
+缓存 I/O 使用了操作系统内核缓冲区，在一定程度上分离了应用程序空间和实际的物理设备。
+缓存 I/O 可以减少读盘的次数，从而提高性能。
+
+缓存 I/O 的缺点
+在缓存I/O的机制中，以写操作为例，数据先从用户态拷贝到内核态中的页缓存中，然后又会从页缓存中写到磁盘中，这些拷贝操作带来的CPU以及内存的开销是非常大的。
+
+直接I/O 优点
+最大的优点就是减少操作系统缓冲区和用户地址空间的拷贝次数。降低了CPU的开销，和内存带宽。对于某些应用程序来说简直是福音，将会大大提高性能。
+
+直接I/O 缺点
+直接IO并不总能让人如意。直接IO的开销也很大，应用程序没有控制好读写，将会导致磁盘读写的效率低下。磁盘的读写是通过磁头的切换到不同的磁道上读取和写入数据，如果需要写入数据在磁盘位置相隔比较远，就会导致寻道的时间大大增加，写入读取的效率大大降低。
+
+
 
 ## [孤儿进程与僵尸进程](https://www.cnblogs.com/Anker/p/3271773.html)
 
@@ -2243,6 +2615,22 @@ https://www.icode9.com/content-4-278303.html
 锁一般是基于**原子操作**和**内存屏障来**实现的，往往还会导致**高速缓存未命中**。这是锁为什么低效的原因。简单来说，对于互斥锁而言，锁依靠原子操作来实现资源访问者对临界区拥有唯一的读写权；依靠内存屏障来禁止临界区内代码代码优化，包括编译器编译优化和CPU指令乱序优化。因为禁止优化，导致了锁保护的临界区内的数据缓存命中率低。
 
 再加上挂起，和自旋
+
+##  页与块之间的关系
+
+https://cloud.tencent.com/developer/article/1027626
+
+| 页             | 块             |
+| :------------- | :------------- |
+| 程序           | 内存           |
+| 逻辑地址       | 物理地址       |
+| 页号           | 块号           |
+| 页内地址       | 块内地址       |
+| 页长(页面大小) | 块长（块大小） |
+
+
+
+
 
 # 设计模式
 
@@ -2453,6 +2841,20 @@ https://blog.csdn.net/SHENNONGZHAIZHU/article/details/51897060?utm_medium=distri
 
 游戏，偏底层的系统：操作系统，数据库，中间件，编译器等等  用C++
 
+## JRE 和 JDK 的区别是什么？
+
+JRE： Java Runtime Environment
+JDK：Java Development Kit 
+JRE顾名思义是java运行时环境，包含了java虚拟机，java基础类库。是使用java语言编写的程序运行所需要的软件环境，是提供给想运行java程序的用户使用的。
+JDK顾名思义是java开发工具包，是程序员使用java语言编写java程序所需的开发工具包，是提供给程序员使用的。JDK包含了JRE，同时还包含了编译java源码的编译器javac，还包含了很多java程序调试和分析的工具：jconsole，jvisualvm等工具软件，还包含了java程序编写所需的文档和demo例子程序。
+
+
+
+作者：王博
+链接：https://www.zhihu.com/question/20317448/answer/14737358
+来源：知乎
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
 ## 为什么synchronized无法禁止指令重排，却能保证有序性？
 
 为了进一步提升计算机各方面能力，在硬件层面做了很多优化，如处理器优化和指令重排等，但是这些技术的引入就会导致有序性问题。
@@ -2544,7 +2946,7 @@ https://www.liaoxuefeng.com/wiki/1252599548343744/1265112034799552
 
 ### hashmap
 
-hashmap8和7的区别
+#### hashmap8和7的区别
 
 https://blog.csdn.net/qq_36520235/article/details/82417949
 
@@ -2558,49 +2960,41 @@ https://blog.csdn.net/qq_36520235/article/details/82417949
 
 **1.8get**
 
-https://juejin.im/post/5b551e8df265da0f84562403#heading-6
+https://crossoverjie.top/2018/07/23/java-senior/ConcurrentHashMap/
 
-判断当前桶是否为空，空的就需要初始化（resize 中会判断是否进行初始化）。
-
-根据当前 key 的 hashcode 定位到具体的桶中并判断是否为空，为空表明没有 Hash 冲突就直接在当前位置创建一个新桶即可。
-
-如果当前桶有值（ Hash 冲突），那么就要比较当前桶中的 `key、key 的 hashcode` 与写入的 key 是否相等，相等就赋值给 `e`,在第 8 步的时候会统一进行赋值及返回。
-
-如果当前桶为红黑树，那就要按照红黑树的方式写入数据。
-
-如果是个链表，就需要将当前的 key、value 封装成一个新节点写入到当前桶的后面（形成链表）。
-
-接着判断当前链表的大小是否大于预设的阈值，大于时就要转换为红黑树。
-
-如果在遍历过程中找到 key 相同时直接退出遍历。
-
-如果 `e != null` 就相当于存在相同的 key,那就需要将值覆盖。
-
-最后判断是否需要进行扩容。
+1. 判断当前桶是否为空，空的就需要初始化（resize 中会判断是否进行初始化）。
+2. 根据当前 key 的 hashcode 定位到具体的桶中并判断是否为空，为空表明没有 Hash 冲突就直接在当前位置创建一个新桶即可。
+3. 如果当前桶有值（ Hash 冲突），那么就要比较当前桶中的 `key、key 的 hashcode` 与写入的 key 是否相等，相等就赋值给 `e`,在第 8 步的时候会统一进行赋值及返回。
+4. 如果当前桶为红黑树，那就要按照红黑树的方式写入数据。
+5. 如果是个链表，就需要将当前的 key、value 封装成一个新节点写入到当前桶的后面（形成链表）。
+6. 接着判断当前链表的大小是否大于预设的阈值，大于时就要转换为红黑树。
+7. 如果在遍历过程中找到 key 相同时直接退出遍历。
+8. 如果 `e != null` 就相当于存在相同的 key,那就需要将值覆盖。
+9. 最后判断是否需要进行扩容。
 
 **get**
 
-首先将 key hash 之后取得所定位的桶。
+- 首先将 key hash 之后取得所定位的桶。
+- 如果桶为空则直接返回 null 。
+- 否则判断桶的第一个位置(有可能是链表、红黑树)的 key 是否为查询的 key，是就直接返回 value。
+- 如果第一个不匹配，则判断它的下一个是红黑树还是链表。
+- 红黑树就按照树的查找方式返回值。
+- 不然就按照链表的方式遍历匹配返回值。
 
-如果桶为空则直接返回 null 。
+死循环
 
-否则判断桶的第一个位置(有可能是链表、红黑树)的 key 是否为查询的 key，是就直接返回 value。
-
-如果第一个不匹配，则判断它的下一个是红黑树还是链表。
-
-红黑树就按照树的查找方式返回值。
-
-不然就按照链表的方式遍历匹配返回值。
+https://blog.csdn.net/littlehaes/article/details/105241194
 
 ### ConcurrentHashMap
 
 **put**
 
-1. 如果数组为空，初始化，初始化完成之后，走 2；
-2. 计算当前槽点有没有值，没有值的话，cas 创建，失败继续自旋（for 死循环），直到成功，槽点有值的话，走 3；
-3. 如果槽点是转移节点(正在扩容)，就会一直自旋等待扩容完成之后再新增，不是转移节点走 4；
-4. 槽点有值的，先锁定当前槽点，保证其余线程不能操作，如果是链表，新增值到链表的尾部，如果是红黑树，使用红黑树新增的方法新增；
-5. 新增完成之后 check 需不需要扩容，需要的话去扩容。
+1. 根据 key 计算出 hashcode 。
+2. 判断是否需要进行初始化。
+3. `f` 即为当前 key 定位出的 Node，如果为空表示当前位置可以写入数据，利用 CAS 尝试写入，失败则自旋保证成功。
+4. 如果当前位置的 `hashcode == MOVED == -1`,则需要进行扩容。
+5. 如果都不满足，则利用 synchronized 锁写入数据。
+6. 如果数量大于 `TREEIFY_THRESHOLD` 则要转换为红黑树。
 
 **get**
 
@@ -2620,9 +3014,15 @@ https://www.jianshu.com/p/487d00afe6ca
 
 4此时线程2访问到了ForwardingNode节点，如果线程2执行的put或remove等写操作，那么就会先帮其扩容。如果线程2执行的是get等读方法，则会调用ForwardingNode的find方法，去nextTable里面查找相关元素。
 
+###  CountDownLatch，CyclicBarrier，Semaphore 
 
+https://mp.weixin.qq.com/s/TDw7GnzDw5FK3RWwkIzzZA
 
-
+1. CountDownLatch 是一个线程等待其他线程， CyclicBarrier 是多个线程互相等待。
+2. CountDownLatch 的计数是减 1 直到 0，CyclicBarrier 是加 1，直到指定值。
+3. CountDownLatch 是一次性的， CyclicBarrier  可以循环利用。
+4. CyclicBarrier 可以在最后一个线程达到屏障之前，选择先执行一个操作。
+5. Semaphore ，需要拿到许可才能执行，并可以选择公平和非公平模式。
 
 
 
@@ -2647,13 +3047,23 @@ ThreadPoolExecutor.DiscardPolicy：丢弃任务，但是不抛出异常。
 ThreadPoolExecutor.DiscardOldestPolicy：丢弃队列最前面的任务，然后重新提交被拒绝的任务
 ThreadPoolExecutor.CallerRunsPolicy：由调用线程（提交任务的线程）处理该任务
 
-## Full GC的触发条件
 
-> **当准备要触发一次 young GC时，如果发现统计数据说之前 young GC的平均晋升大小比目前的 old gen剩余的空间大，则不会触发young GC而是转为触发 full GC** (因为HotSpot VM的GC里，除了垃圾回收器 CMS的concurrent collection 之外，其他能收集old gen的GC都会同时收集整个GC堆，包括young gen，所以不需要事先准备一次单独的young GC)
 
-> **如果有永久代(perm gen),要在永久代分配空间但已经没有足够空间时，也要触发一次 full GC**
+## ***\*FGC又是什么时候触发的\**？**
 
-> **System.gc()，heap dump带GC,其默认都是触发 full GC.**
+下面4种情况，对象会进入到老年代中：
+
+- YGC时，To Survivor区不足以存放存活的对象，对象会直接进入到老年代。
+- 经过多次YGC后，如果存活对象的年龄达到了设定阈值，则会晋升到老年代中。
+- 动态年龄判定规则，To Survivor区中相同年龄的对象，如果其大小之和占到了 To Survivor区一半以上的空间，那么大于此年龄的对象会直接进入老年代，而不需要达到默认的分代年龄。
+- 大对象：由-XX:PretenureSizeThreshold启动参数控制，若对象大小大于此值，就会绕过新生代, 直接在老年代中分配。
+
+当晋升到老年代的对象大于了老年代的剩余空间时，就会触发FGC（Major GC），FGC处理的区域同时包括新生代和老年代。除此之外，还有以下4种情况也会触发FGC：
+
+- 老年代的内存使用率达到了一定阈值（可通过参数调整），直接触发FGC。
+- 空间分配担保：在YGC之前，会先检查老年代最大可用的连续空间是否大于新生代所有对象的总空间。如果小于，说明YGC是不安全的，则会查看参数 HandlePromotionFailure 是否被设置成了允许担保失败，如果不允许则直接触发Full GC；如果允许，那么会进一步检查老年代最大可用的连续空间是否大于历次晋升到老年代对象的平均大小，如果小于也会触发 Full GC。
+- Metaspace（元空间）在空间不足时会进行扩容，当扩容到了-XX:MetaspaceSize 参数的指定值时，也会触发FGC。
+- System.gc() 或者Runtime.gc() 被显式调用时，触发FGC。
 
 ## Minor GC的触发条件
 
@@ -2938,38 +3348,6 @@ ThreadLocalRandom中，把probe和seed设置到当前的线程，这样其他线
 接口是根本不知子类的存在，方法如何实现还不确认，预先定义。
 
 
-## 内存溢出排查
-
-一般什么情况可能是出现了溢出呢？
-超时，不进行服务，服务挂掉，接口不在服务这样的异常问题。
-
-![3A199CF9-2DB1-466D-BFAA-A8B848717282](README.assets/3A199CF9-2DB1-466D-BFAA-A8B848717282.png)
-
-![7C47F11E-9B85-487D-BCF0-F0E16A3A8108](README.assets/7C47F11E-9B85-487D-BCF0-F0E16A3A8108.png)
-
-可以看到内存得不到释放
-
-使用dump可以定位到哪一行代码
-
-内存溢出的解决方案：
-
-第一步，修改JVM启动参数，直接增加内存。(-Xms，-Xmx参数一定不要忘记加。)
-
-第二步，检查错误日志，查看“OutOfMemory”错误前是否有其它异常或错误。
-
-第三步，对代码进行走查和分析，找出可能发生内存溢出的位置。
-
-重点排查以下几点：
-
-1.检查对数据库查询中，是否有一次获得全部数据的查询。一般来说，如果一次取十万条记录到内存，就可能引起内存溢出。这个问题比较隐蔽，在上线前，数据库中数据较少，不容易出问题，上线后，数据库中数据多了，一次查询就有可能引起内存溢出。因此对于数据库查询尽量采用分页的方式查询。
-
-2.检查代码中是否有死循环或递归调用。
-
-3.检查是否有大循环重复产生新对象实体。
-
-4.检查List、MAP等集合对象是否有使用完后，未清除的问题。List、MAP等集合对象会始终存有对对象的引用，使得这些对象不能被GC回收。
-
-第四步，使用内存查看工具动态查看内存使用情况
 
 
 
@@ -3656,6 +4034,69 @@ Step3:客户端根据HandShake包里面的加密seed对MySql登录密码进行�
 Step4:DB接收到客户端发过来的Auth包后会对密码摘要进行比对，从而确认是否能够登录。如果能，则发送Okay包返回。
 Step5:客户端与DB的连接至此完毕。
 
+## 分布式数据库数据一致性原理说明与实现
+
+https://cloud.tencent.com/developer/article/1013767
+
+**Raft算法**保障的
+
+## Join算法原理
+
+https://zhuanlan.zhihu.com/p/54275505
+
+**
+
+## 分库表关联问题**
+
+在单库单表的情况下，联合查询是非常容易的。但是，随着分库与分表的演变，联合查询就遇到跨库关联的问题。粗略的解决方法：ER分片：子表的记录与所关联的父表记录存放在同一个数据分片上。全局表：基础数据，所有库都拷贝一份。字段冗余：这样有些字段就不用join去查询了。ShareJoin：是一个简单的跨分片join，目前支持2个表的join,原理就是解析SQL语句，拆分成单表的SQL语句执行，然后把各个节点的数据汇集。
+
+## Mysql优缺点
+
+**优点：**
+
+- 体积小、速度快、总体拥有成本低，开源；
+- 支持多种操作系统；
+- 是开源数据库，提供的接口支持多种语言连接操作
+- mysql的核心程序采用完全的多线程编程。线程是轻量级的进程，它可以灵活地为用户提供服务，而不过多的系统资源。用多线程和C语言实现的MySql能很容易充分利用CPU；
+- MySql有一个非常灵活而且安全的权限和口令系统。当客户与MySql服务器连接时，他们之间所有的口令传送被加密，而且MySql支持主机认证；
+- 支持ODBC for Windows， 支持所有的ODBC 2.5函数和其他许多函数， 可以用Access连接MySql服务器， 使得应用被扩展；
+- 支持大型的数据库， 可以方便地支持上千万条记录的数据库。作为一个开放源代码的数据库，可以针对不同的应用进行相应的修改。
+- 拥有一个非常快速而且稳定的基于线程的内存分配系统，可以持续使用面不必担心其稳定性；
+- MySQL同时提供高度多样性，能够提供很多不同的使用者介面，包括命令行客户端操作，网页浏览器，以及各式各样的程序语言介面，例如C+，Perl，Java，PHP，以及Python。你可以使用事先包装好的客户端，或者干脆自己写一个合适的应用程序。MySQL可用于Unix，Windows，以及OS/2等平台，因此它可以用在个人电脑或者是服务器上；
+
+**缺点：**[返回搜狐，查看更多](https://www.sohu.com/?strategyid=00001&spm=smpc.content.content.2.1601865635126ZpwiCVt)
+
+- 不支持热备份；
+- MySQL最大的缺点是其安全系统，主要是复杂而非标准，另外只有到调用mysqladmin来重读用户权限时才发生改变；
+- 没有一种存储过程(Stored Procedure)语言，这是对习惯于企业级数据库的程序员的最大限制；
+- MySQL的价格随平台和安装方式变化。Linux的MySQL如果由用户自己或系统管理员而不是第三方安装则是免费的，第三方案则必须付许可费。Unix或linux 自行安装 免费 、Unix或Linux 第三方安装 收费；
+
+## 索引不生效 前缀索引
+
+https://mp.weixin.qq.com/s/-gmAPfiKMNJgHhIZqR2C4A
+
+## 索引设计准则：三星索引
+
+ 法则：将选择性最高的列放在索引的最前列，这种建立在某些场景可能有用，但通常不如避免随机 IO 和 排序那么重要，这里引入索引设计中非常著名的一个准则：三星索引。
+
+如果一个查询满足三星索引中三颗星的所有索引条件，**理论上**可以认为我们设计的索引是最好的索引。什么是三星索引
+
+1. 第一颗星：WHERE 后面参与查询的列可以组成了单列索引或联合索引
+2. 第二颗星：避免排序，即如果 SQL 语句中出现 order by colulmn，那么取出的结果集就已经是按照 column 排序好的，不需要再生成临时表
+3. 第三颗星：SELECT 对应的列应该尽量是索引列，即尽量避免回表查询。
+
+## [SQL truncate 、delete与drop区别](https://www.cnblogs.com/8765h/archive/2011/11/25/2374167.html)
+
+https://www.cnblogs.com/8765h/archive/2011/11/25/2374167.html
+
+1. truncate 和 delete 只删除数据不删除表的结构(定义)
+drop 语句将删除表的结构被依赖的约束(constrain)、触发器(trigger)、索引(index)；依赖于该表的存储过程/函数将保留,但是变为 invalid 状态。
+
+ 
+
+2. delete 语句是数据库操作语言(dml)，这个操作会放到 rollback segement 中，事务提交之后才生效；如果有相应的 trigger，执行的时候将被触发。
+truncate、drop 是数据库定义语言(ddl)，操作立即生效，原数据不放到 rollback segment 中，不能回滚，操作不触发 trigger。
+
 # Spring
 
 ## 控制反转
@@ -3873,6 +4314,53 @@ static class Rurn implements Runnable{
         }
 
     }
+```
+
+```
+class LRUCache {
+    private int capacity = 0;
+    private HashMap<Integer, Integer> hm = null;
+    private LinkedList<Integer> linkedList;
+
+    public LRUCache(int capacity) {
+        this.capacity = capacity;
+        hm = new HashMap<>();
+        linkedList = new LinkedList<Integer>();
+    }
+
+    public int get(int key) {
+        if (!hm.containsKey(key)) {
+            return -1;
+        }
+
+		//remove(int index)：移除此列表中指定位置处的元素。
+//remove(Objec o)：从此列表中移除首次出现的指定元素（如果存在）。
+//所以这里是remove(Objec o)
+        linkedList.remove((Integer) key);
+        linkedList.addFirst(key);
+        return hm.get(key);
+    }
+
+    public void put(int key, int value) {
+        if (hm.containsKey(key)) {
+            hm.remove(key);
+            linkedList.remove((Integer) key);
+        } else {
+            if (linkedList.size() == this.capacity) {
+                hm.remove(linkedList.getLast());
+                linkedList.removeLast();
+            }
+        }
+
+        linkedList.addFirst(key);
+        hm.put(key, value);
+    }
+}
+
+作者：da-wei-wang-2
+链接：https://leetcode-cn.com/problems/lru-cache/solution/146-lruhuan-cun-hashmaplinkedlist-shi-xian-by-da-w/
+来源：力扣（LeetCode）
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 ```
 
 
@@ -4643,7 +5131,53 @@ class UF {
 }
 ```
 
+## 字符串转整数
 
+```
+public class Solution {
+    public int myAtoi(String str) {
+        char[] chars = str.toCharArray();
+        int n = chars.length;
+        int idx = 0;
+        while (idx < n && chars[idx] == ' ') {
+            // 去掉前导空格
+            idx++;
+        }
+        if (idx == n) {
+            //去掉前导空格以后到了末尾了
+            return 0;
+        }
+        boolean negative = false;
+        if (chars[idx] == '-') {
+            //遇到负号
+            negative = true;
+            idx++;
+        } else if (chars[idx] == '+') {
+            // 遇到正号
+            idx++;
+        } else if (!Character.isDigit(chars[idx])) {
+            // 其他符号
+            return 0;
+        }
+        int ans = 0;
+        while (idx < n && Character.isDigit(chars[idx])) {
+            int digit = chars[idx] - '0';
+            if (ans > (Integer.MAX_VALUE - digit) / 10) {
+                // 本来应该是 ans * 10 + digit > Integer.MAX_VALUE
+                // 但是 *10 和 + digit 都有可能越界，所有都移动到右边去就可以了。
+                return negative? Integer.MIN_VALUE : Integer.MAX_VALUE;
+            }
+            ans = ans * 10 + digit;
+            idx++;
+        }
+        return negative? -ans : ans;
+    }
+}
+```
+
+## 求两个字符串的最长公共子串
+
+https://blog.csdn.net/qq_25800311/article/details/81607168?utm_medium=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf
 
 # 分布式
 
@@ -4917,6 +5451,22 @@ spring cloud 常见面试题 来理解微服务（通俗易懂）
 https://blog.csdn.net/qq_35906921/article/details/84032874
 
 微服务架构是—种架构模式或者说是一种架构风格,它提倡将单一应用程序划分成-一组小的服务,每个服务运行在其独立的自己的进程中,服务之间互相协调、互相配合,为用户提供最终价值。服务之间采用轻量级的通信机制互相沟通(通常是基于HTTP的REST ful API)。毎个服务都围绕着貝体业务进行构建,并且能够被独立地部罟到生产环境、类生产环境等另外,应尽量避免统一的、集中式的服务管理机制,对具体的_个服务而言,应根据业务上下文,选择合适的语言、工具对其进行构建,可以有一个非常轻量级的集中式管理来协调这些服务,可以使用不同的语言来编写服务,也可以使用不同的数据存储。 
+
+## 雪花算法时间回拨问题
+
+时钟回拨是与硬件时钟和ntp服务相关的。硬件时钟可能会因为各种原因发生不准的情况，网络中提供了ntp服务来做时间校准，做校准的时候就会发生时钟的跳跃或者回拨的问题。
+
+- 如果时间回拨时间较短，比如配置5ms以内，那么可以直接等待一定的时间，让机器的时间追上来。
+- 如果时间的回拨时间较长，我们不能接受这么长的阻塞等待，那么又有两个策略:
+
+1. 直接拒绝，抛出异常，打日志，通知RD时钟回滚。
+2. 利用扩展位，上面我们讨论过不同业务场景位数可能用不到那么多，那么我们可以把扩展位数利用起来了，比如当这个时间回拨比较长的时候，我们可以不需要等待，直接在扩展位加1。2位的扩展位允许我们有3次大的时钟回拨，一般来说就够了，如果其超过三次我们还是选择抛出异常，打日志。-----------------------------简单的说就是换个机器Id
+
+
+作者：咖啡拿铁
+链接：https://juejin.im/post/6844903686271926279
+来源：掘金
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 
 # 项目
 
@@ -5345,6 +5895,168 @@ https://www.infoq.cn/article/2017hongbao-weixin
 \- 通过事务操作串行化保证资金安全，避免出现红包超发、漏发、重复发的情况；
 \- 通过红包ID+循环天双维度分库表规则提升系统性能；
 
+## 多级缓存的分层架构
+
+https://juejin.im/post/6844903950051721230#comment
+
+## CDN原理简析
+
+https://juejin.im/post/6844903873518239752#comment
+
+![](https://gitee.com/xurunxuan/picgo/raw/master/img/16b87f0340a17453)
+
+## 附近的人功能实现及原理
+
+https://www.jianshu.com/p/ec6a3cd8817f
+
+## 携带Cookie跨域
+
+https://blog.csdn.net/duola8789/article/details/91447479
+
+## 海量数据中寻找中位数
+
+https://zhuanlan.zhihu.com/p/75397875
+
+## CPU打到100%p排查
+
+https://mp.weixin.qq.com/s/roEMz-5tzBZvGxbjq8NhOQ
+
+先进服务器，用**top -c** 命令找出当前进程的运行列表
+
+按一下 **P** 可以按照CPU使用率进行排序
+
+显示Java进程 PID 为 2609 的java进程消耗最高
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpzHIyibnmUUBM3NL4aUHbSsqia7RS3uow2SxpgmcwOqaDia829ksPblCTwUpdUxdgZQcicjzMlrYwgDfQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+然后我们需要根据PID 查出CPU里面消耗最高的进程
+
+使用命令 **top -Hp 2609** 找出这个进程下面的线程，继续按P排序
+
+可以看到 2854 CPU消耗最高
+
+![image-20200331222532604](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpzHIyibnmUUBM3NL4aUHbSsq6ebpv2SzQphXfv0deE2Rv7HD0o9pMdQAG7m9teDaeqxCrbkO40unZQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)image-20200331222532604
+
+2854是十进制的，我们需要转换为十六进制，转换结果：b26
+
+接下来就需要导出我们的进程快照了，看看这个线程做了啥
+
+```
+jstack -l 2609 > ./2609.stack
+```
+
+再用grep查看一下线程在文件里做了啥
+
+```
+cat 2609.stack |grep 'b26' -C 8
+```
+
+我这里就随便定位一个，基本上这样查都可以定位到你死循环的那个类，那一行，这里你还可以在jstack出来的文件中看到很多熟悉的名词，至于是啥，你们留言告诉我好了，就当是个课后作业了。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpzHIyibnmUUBM3NL4aUHbSsqpzibTNUa6GR1sULxJolsb10cMdKdUCetiaXWKfibFwvsmpQJQqW7UYiaVg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+## 内存溢出排除
+
+https://mp.weixin.qq.com/s/7XGD-Z3wrThv5HyoK3B8AQ
+
+JDK自带的工具jvisualvm
+
+
+
+
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KA3iabsiaKBAxcCsIdMUjaWTLjCtgSyYNW2QEmhPxLJfxKXMPAmSpMce7A/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+堆空间就一直上去，直到OOM（out of memory）
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAalia9SC8t39gaWPN3Fr2XSVOh3ZhNHFQaQeQbQxojcNmnCSp8wkNWzQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+这个时候我们就dump下来堆信息看看
+
+会dump出一个这样的hprof快照文件，可以用jvisualvm本身的系统去分析，我这里推荐MAT吧，因为我习惯这个了。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAH2F5oSicZWTsTrpE8Yme0ktrUW51XicNcE2FFiaBmKvXc0uwW6prdOqlQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+mat已经分析了我们的文件
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAm2Od28WxkrUZtsiaiaib2pu7GhM7Yj3t498pr3R3SHpLLXag6BMQsu4ibQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAgSl6B4vOOHbztgTW4eIQNVGcxWsf8cLmfawiaxdEicbco4xqI8qde5wg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+他发现了是ArrayList的问题了，我们再往下看看
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAVrlq3umzr6XLQ4xsUISEIXWicnia4UosrdRtnBw5JQUnFKcIV0w6aULw/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+看到了嘛，具体代码的位置都帮我们定位好了，那排查也就是手到擒来的事情了。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/uChmeeX1FpwOgpHribv98yX94771PC0KAFHh9yY1YBtW0cZiaQ2bPWia7DsanPwdgWicWR6cxC4evBL56AiazwZH5Kg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+内存溢出的解决方案：
+
+第一步，修改JVM启动参数，直接增加内存。(-Xms，-Xmx参数一定不要忘记加。)
+
+第二步，检查错误日志，查看“OutOfMemory”错误前是否有其它异常或错误。
+
+第三步，对代码进行走查和分析，找出可能发生内存溢出的位置。
+
+重点排查以下几点：
+
+1.检查对数据库查询中，是否有一次获得全部数据的查询。一般来说，如果一次取十万条记录到内存，就可能引起内存溢出。这个问题比较隐蔽，在上线前，数据库中数据较少，不容易出问题，上线后，数据库中数据多了，一次查询就有可能引起内存溢出。因此对于数据库查询尽量采用分页的方式查询。
+
+2.检查代码中是否有死循环或递归调用。
+
+3.检查是否有大循环重复产生新对象实体。
+
+4.检查List、MAP等集合对象是否有使用完后，未清除的问题。List、MAP等集合对象会始终存有对对象的引用，使得这些对象不能被GC回收。
+
+第四步，使用内存查看工具动态查看内存使用情况
+
+## 键盘敲入 A 字母时，操作系统期间发生了什么
+
+https://mp.weixin.qq.com/s/fKHOf_CzG8HYXHlg54V_rg
+
+那当用户输入了键盘字符，**键盘控制器**就会产生扫描码数据，并将其缓冲在键盘控制器的寄存器中，紧接着键盘控制器通过总线给 CPU 发送**中断请求**。
+
+CPU 收到中断请求后，操作系统会**保存被中断进程的 CPU 上下文**，然后调用键盘的**中断处理程序**。
+
+键盘的中断处理程序是在**键盘驱动程序**初始化时注册的，那键盘**中断处理函数**的功能就是从键盘控制器的寄存器的缓冲区读取扫描码，再根据扫描码找到用户在键盘输入的字符，如果输入的字符是显示字符，那就会把扫描码翻译成对应显示字符的  ASCII 码，比如用户在键盘输入的是字母 A，是显示字符，于是就会把扫描码翻译成 A 字符的 ASCII 码。
+
+得到了显示字符的 ASCII 码后，就会把 ASCII 码放到「读缓冲区队列」，接下来就是要把显示字符显示屏幕了，显示设备的驱动程序会定时从「读缓冲区队列」读取数据放到「写缓冲区队列」，最后把「写缓冲区队列」的数据一个一个写入到显示设备的控制器的寄存器中的数据缓冲区，最后将这些数据显示在屏幕里。
+
+显示出结果后，**恢复被中断进程的上下文**。
+
+## 统计在线用户人数
+
+https://blog.huangz.me/diary/2016/redis-count-online-users.html
+
+| 方案        | 特点                                                         |
+| :---------- | :----------------------------------------------------------- |
+| 有序集合    | 能够同时储存在线用户的名单以及用户的上线时间，能够执行非常多的聚合计算操作，但是耗费的内存也非常多。 |
+| 集合        | 能够储存在线用户的名单，也能够执行聚合计算，消耗的内存比有序集合少，但是跟有序集合一样，这个方案消耗的内存也会随着用户数量的增多而增多。 |
+| HyperLogLog | 无论需要统计的用户有多少，只需要耗费 12 KB 内存，但由于概率算法的特性，只能给出在线人数的估算值，并且也无法获取准确的在线用户名单。 |
+| 位图        | 在尽可能节约内存的情况下，记录在线用户的名单，并且能够对这些名单执行聚合操作。 |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ES
 
 ![image-20200726210535387](README.assets/image-20200726210535387.png)
@@ -5368,6 +6080,26 @@ https://www.cnblogs.com/throwable/p/9315318.html
 |   接口隔离原则    |      类之间的依赖关系应该建立在最小的接口上      |
 | 合成/聚合复用原则 | 尽量使用合成/聚合，而不是通过继承达到复用的目的  |
 |    迪米特法则     | 一个软件实体应当尽可能少的与其他实体发生相互作用 |
+
+## 抽象工厂模式和工厂方法模式区别
+
+https://cloud.tencent.com/developer/article/1523363
+
+| 工厂方法模式                               | 抽象工厂模式                               |
+| ------------------------------------------ | ------------------------------------------ |
+| 针对的是一个产品等级结构                   | 针对的是面向多个产品等级结构               |
+| 一个抽象产品类                             | 多个抽象产品类                             |
+| 可以派生出多个具体产品类                   | 每个抽象产品类可以派生出多个具体产品类     |
+| 一个抽象工厂类，可以派生出多个具体工厂类   | 一个抽象工厂类，可以派生出多个具体工厂类   |
+| 每个具体工厂类只能创建一个具体产品类的实例 | 每个具体工厂类可以创建多个具体产品类的实例 |
+
+![image-20200929204056208](https://gitee.com/xurunxuan/picgo/raw/master/img/image-20200929204056208.png)
+
+## 深入理解MVC
+
+https://zhuanlan.zhihu.com/p/35680070
+
+View层是界面，Model层是业务逻辑，Controller层用来调度View层和Model层，将用户界面和业务逻辑合理的组织在一起，起粘合剂的效果。所以Controller中的内容能少则少，这样才能提供最大的灵活性。
 
 # mybatis
 
@@ -5514,6 +6246,8 @@ max.in.flight.requests.per.connection = 1 限制客户端在单个连接上能�
 
 Provider为服务提供者集群，服务提供者负责暴露提供的服务，并将服务注册到服务注册中心。· Consumer为服务消费者集群，服务消费者通过RPC远程调用服务提供者提供的服务。· Registry负责服务注册与发现。· Monitor为监控中心，统计服务的调用次数和调用时间。
 
+
+
 ## SPI
 
 SPI 全称为 Service Provider Interface，是一种服务发现机制。SPI 的本质是将接口实现类的全限定名配置在文件中，并由服务加载器读取配置文件，加载实现类。这样可以在运行时，动态为接口替换实现类。
@@ -5565,3 +6299,13 @@ https://www.fanhaobai.com/2018/12/load-balance-smooth-weighted-round-robin.html
 ## 集群容错
 
 ![image-20200909165709916](README.assets/image-20200909165709916.png)
+
+## rpc和http
+
+https://cloud.tencent.com/developer/article/1591740
+
+基于Restful的远程过程调用有着明显的缺点，主要是效率低、封装调用复杂。当存在大量的服务间调用时，这些缺点变得更为突出。
+
+服务A调用服务B的过程是应用间的内部过程，**牺牲可读性提升效率、易用性是可取的**。基于这种思路，RPC产生了。
+
+简单来说成熟的rpc库相对http容器，更多的是封装了“服务发现”，"负载均衡"，“熔断降级”一类面向服务的高级特性。可以这么理解，rpc框架是面向服务的更高级的封装。
