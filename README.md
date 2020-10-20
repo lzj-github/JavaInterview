@@ -1,3 +1,11 @@
+“后台开发”指的是“服务端的网 络程序开
+
+发”，从功能上可以具体描述为 ：服务器收到客户端发来的
+
+请求数据，解析请求数据后处理，最后返回结果
+
+![image-20201013165122012](C:/Users/xu/AppData/Roaming/Typora/typora-user-images/image-20201013165122012.png)
+
 ![img](README.assets/460263-74d88a767a80843a.png)
 
 
@@ -223,6 +231,50 @@ URG(urgent)：紧急标志，用于保证TCP连接不被中断，并且督促中
 
 tcp/ip卷一上有说，虽然窗口是指数增加，但是相比于一开始就选择大窗口，仍然较慢
 
+### 三次握手报文丢失问题
+
+https://mp.weixin.qq.com/s/bHZ2_hgNQTKFZpWMCfUH9A
+
+第一次
+
+客户端发起了 SYN 包后，一直没有收到服务端的 ACK ，所以一直超时重传了 5 次，并且每次 RTO 超时时间是不同的：
+
+- 第一次是在 1 秒超时重传
+- 第二次是在 3 秒超时重传
+- 第三次是在 7 秒超时重传
+- 第四次是在 15 秒超时重传
+- 第五次是在 31 秒超时重传
+
+可以发现，每次超时时间 RTO 是**指数（翻倍）上涨的**，当超过最大重传次数后，客户端不再发送 SYN 包。
+
+在 Linux 中，第一次握手的 `SYN` 超时重传次数，是如下内核参数指定的：
+
+```
+$ cat /proc/sys/net/ipv4/tcp_syn_retries
+5
+```
+
+`tcp_syn_retries` 默认值为 5，也就是 SYN 最大重传次数是 5 次。
+
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZctmf3ObkESj41ayTbgy9q45mcsJWSSSoNibMUTQxMmUHBEycfzXaVicyquxCU3icPFV8uH9ezsJTdEA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+第二次握手丢失
+
+**当第二次握手的 SYN、ACK 丢包时，客户端会超时重发 SYN 包，服务端也会超时重传 SYN、ACK 包。**
+
+第三次
+
+在建立 TCP 连接时，如果第三次握手的 ACK，服务端无法收到，则服务端就会短暂处于`SYN_RECV` 状态，而客户端会处于 `ESTABLISHED` 状态。
+
+由于服务端一直收不到 TCP 第三次握手的 ACK，则会一直重传 SYN、ACK 包，直到重传次数超过 `tcp_synack_retries` 值（默认值 5 次）后，服务端就会断开 TCP 连接。
+
+而客户端则会有两种情况：
+
+- 如果客户端没发送数据包，一直处于 `ESTABLISHED` 状态，然后经过 2 小时 11 分 15 秒才可以发现一个「死亡」连接，于是客户端连接就会断开连接。
+- 如果客户端发送了数据包，一直没有收到服务端对该数据包的确认报文，则会一直重传该数据包，直到重传次数超过 `tcp_retries2` 值（默认值 15 次）后，客户端就会断开 TCP 连接。
+
+
+
 
 
 ### 三次握手初始序列号
@@ -276,6 +328,15 @@ https://blog.csdn.net/AlimSah/article/details/52725331
 死锁
 
 ![image-20200630145502788](README.assets/image-20200630145502788.png)
+
+### TCP 快速建立连接
+
+https://mp.weixin.qq.com/s/bHZ2_hgNQTKFZpWMCfUH9A
+
+![image-20201011204544658](https://gitee.com/xurunxuan/picgo/raw/master/img/image-20201011204544658.png)
+
+- 在第一次建立连接的时候，服务端在第二次握手产生一个 `Cookie` （已加密）并通过 SYN、ACK 包一起发给客户端，于是客户端就会缓存这个 `Cookie`，所以第一次发起 HTTP Get 请求的时候，还是需要 2 个 RTT 的时延；
+- 在下次请求的时候，客户端在 SYN 包带上 `Cookie` 发给服务端，就提前可以跳过三次握手的过程，因为 `Cookie` 中维护了一些信息，服务端可以从 `Cookie` 获取 TCP 相关的信息，这时发起的 HTTP GET 请求就只需要 1 个 RTT 的时延；
 
 
 
@@ -499,6 +560,8 @@ Duplicate SACK 又称 `D-SACK`，其主要**使用了 SACK 来告诉「发送方
 
 https://jishuin.proginn.com/p/763bfbd29315
 
+https://zhuanlan.zhihu.com/p/40013724   写得好
+
 危害：
 
 - 第一是内存资源占用；
@@ -557,7 +620,7 @@ net.ipv4.tcp_tw_reuse = 1
 
 > 既然TIME_WAIT不是为了阻止新连接，那么只要能证明自己确实属于新连接而不是老连接的残留数据，那么该连接即使匹配到了TIME_WAIT的四元组也是可以接受的，即可以重用TIME_WAIT的连接。如何来保证呢？很简单，只需要把老的数据丢在窗口外即可。为此，只要新连接的初始序列号比老连接的FIN包末尾序列号大，那么老连接的所有数据即使迟到也会落在窗口之外，从而不会破坏新建连接！ 即使不使用序列号，还是可以使用时间戳，因为TCP/IP规范规定IP地址要是唯一的，根据这个唯一性，欲重用TIME_WAIT连接的新连接的必然发自同一台机器，而机器时间是单调递增不能倒流的，因此只要新连接带有时间戳且其值比老连接FIN时的时间戳大，就认为该新连接是可以接受的，时间戳重用TW连接的机制的前提是IP地址唯一性导出的发起自同一台机器，那么不满足该前提的则不能基于此来重用TIME_WAIT连接，因此NAT环境不能这么做遍成了自然而然的结论。
 
-
+所以我给出的建议是**服务端不要主动关闭，把主动关闭方放到客户端**。毕竟咱们服务器是一对很多很多服务，我们的资源比较宝贵。
 
 ### SYN Cookies
 
@@ -869,6 +932,27 @@ https://segmentfault.com/a/1190000007403846
 ## http劫持
 
 https://juejin.im/post/6844903991764058126#comment
+
+## HTTP缓存机制及原理
+
+https://juejin.im/post/6844903801778864136
+
+1、对于强制缓存，服务器通知浏览器一个缓存时间，在缓存时间内，下次请求，直接用缓存，不在时间内，执行比较缓存策略。
+
+2、对于比较缓存，将缓存信息中的Etag和Last-Modified通过请求发送给服务器，由服务器校验，返回304状态码时，浏览器直接使用缓存。
+
+总结流程图如下所示：
+
+![img](https://user-gold-cdn.xitu.io/2019/3/22/169a12255df4532a?imageView2/0/w/1280/h/960/format/webp/ignore-error/1)
+
+
+验证是否能使用缓存（`协商缓存策略`）主要有两种方式：
+
+1、`Last-Modified` ：最后一次修改时间
+
+2、`Etag`: 数据签名
+
+配合`If-Match`或者`If-Non-Match`使用 对比资源的签名判断是否使用缓存 `ETag`也是首次请求的时候
 
 
 
@@ -1259,7 +1343,8 @@ Reactor模式
 - 从算法实现难度上来比较，skiplist比平衡树要简单得多。
 
   ![image-20200714225954223](README.assets/image-20200714225954223.png)
->>>>>>> 48513899db794c8653973c79b89cdc85675ea47c
+
+
 
 ## Redis的缺点
 
@@ -1355,6 +1440,18 @@ https://www.jianshu.com/p/16ff1fc9e13c
 二级
 
 ![img](面试总结.assets/4067824-cc6fd3b44c184435.png)
+
+## Mybatis 映射器(Mapper)工作原理
+
+https://cloud.tencent.com/developer/article/1430026
+
+简单总结就是一句话：通过JDK动态代理，根据映射器接口+当前要执行的方法，确定要执行的sql，对sql的类型进行处理，最后还是委派给SqlSession来完成。
+
+**当接口方法执行时，首先通过反射拿到当前接口的全路径当做namespace，然后把执行的方法名当成id，拼接成namespace.id，最后在xml映射文件中寻找对应的sql**。 
+
+SQL与Mapper接口的绑定关系是如何建立的？
+
+这个过程在mybatis初始化阶段，解析xml配置文件的时候就确定了。具体逻辑是，当解析一个xml配置文件时，会尝试根据<mapper namespace="....">的namespace属性值，判断classpath下有没有这样一个接口的全路径与namespace属性值完全相同，如果有，则建立二者之间的映射关系。
 
 # 数据结构
 
@@ -1667,6 +1764,22 @@ static int len;
 版权声明：本文为CSDN博主「无鞋童鞋」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
 原文链接：https://blog.csdn.net/FX677588/article/details/72471357
 
+### 为什么在平均情况下快速排序比堆排序要优秀？
+
+https://www.zhihu.com/question/23873747
+
+堆排比较的几乎都不是相邻元素，对cache极不友好，这才是很少被采用的原因。
+
+### 快排的最差情况什么时候发生
+
+这个答案还得看枢轴（pivot）的选择策略。在快速排序的早期版本中呢，最左面或者是最右面的那个元素被选为枢轴，那最坏的情况就会在下面的情况下发生啦：
+
+1）数组已经是正序（same order）排过序的。
+2）数组已经是倒序排过序的。
+3）所有的元素都相同（1、2的特殊情况）
+
+因为这些案例在用例中十分常见，所以这个问题可以通过要么选择一个随机的枢轴，或者选择一个分区中间的下标作为枢轴，或者（特别是对于相比更长的分区）选择分区的第一个、中间、最后一个元素的中值作为枢轴。有了这些修改，那快排的最差的情况就不那么容易出现了，但是如果输入的数组最大（或者最小元素）被选为枢轴，那最坏的情况就又来了。
+
 ## MD5算法原理
 
 
@@ -1676,7 +1789,6 @@ static int len;
 动态规划也是一种将复杂问题分解成更小的子问题来解决。但是它和分治策略不同的是，首先它分解的子问题之间是**相互依赖**的，大规模问题的解依赖小规模问题的解，其次它是从最简单最小的规模问题开始解，问题的规模逐渐增大。是一种**自底向上**求解的方法（分治策略是**自顶向下**的）。还是吃自助（可能是太久没出去想吃自助了），这次那几个服务员没有进行分类拿取，需要互相看看都拿了什么，拿了多少，自己再决定如何去拿。
 
 分而治之是解决问题的典型策略，它的思想在于将问题分为若干**互相独立**更小规模的部分，通过解决每一个小规模的问题，并将结果汇总从而得到问题的解。咱们还拿吃自助来做比喻，分治就像是吃自助的时候需要先把菜都端上来，你分配几个服务员（当然现实中是不太现实的），一个去拿肉类、一个去拿海鲜、一个去拿蔬菜、一个去接饮料......最后放在一起开吃，他们之间拿东西是互相独立的。
-
 
 作者：差得远呢
 链接：https://juejin.im/post/6844904119098966030
@@ -1718,35 +1830,7 @@ cup缓存会加载一行数据，如果是数组的话，会加载数组的几�
 
 ![img](https://gitee.com/xurunxuan/picgo/raw/master/img/164ea1033b955f2e)
 
-# ZooKeeper
 
-## 解决的问题
-
-分布式数据一致性
-
-
-
-## 使用场景
-
-1.数据的订阅和发布
-
-配置中心
-
-2.软负载均衡
-
-3.命名服务
-
-全局id
-
-## 原子操作
-
-![img](README.assets/企业微信截图_15928841848073.png)
-
-每个节点都有版本号，所以原子操作是通过CAS,当然也可以加锁，如果是加锁version就是-1
-
-## Watcher
-
-![img](README.assets/企业微信截图_15928844214716.png)
 
 
 
@@ -1797,9 +1881,7 @@ https://www.cnblogs.com/ggjucheng/archive/2012/01/08/2316399.html
 
 循环等待条件。一定会有一个环互相等待。
 
-## 虚拟内存
 
-我们可以把进程所使用的地址「隔离」开来，即让操作系统为每个进程分配独立的一套「**虚拟地址**」，人人都有，大家自己玩自己的地址就行，互不干涉。
 
 ## 段页
 
@@ -1837,6 +1919,8 @@ https://mp.weixin.qq.com/s/oexktPKDULqcZQeplrFunQ
 ## 多线程和多进程
 
 ![image-20200811204755626](README.assets/image-20200811204755626.png)
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/16cb70ba942d9fda)
 
 线程的缺点：
 
@@ -1909,6 +1993,11 @@ https://hiberabyss.github.io/2018/03/13/shared-memory/
 **虚拟内存为每个进程提供了一个一致的、私有的地址空间，它让每个进程产生了一种自己在独享主存的错觉（每个进程拥有一片连续完整的内存空间）**。
 
 理解不深刻的人会认为虚拟内存只是“使用硬盘空间来扩展内存“的技术，这是不对的。**虚拟内存的重要意义是它定义了一个连续的虚拟地址空间**，使得程序的编写难度降低。并且，**把内存扩展到硬盘空间只是使用虚拟内存的必然结果，虚拟内存空间会存在硬盘中，并且会被内存缓存（按需），有的操作系统还会在内存不够的情况下，将某一进程的内存全部放入硬盘空间中，并在切换到该进程时再从硬盘读取**（这也是为什么Windows会经常假死的原因...）。
+
+好处
+
+- 避免用户直接访问物理内存地址，防止一些破坏性操作，保护操作系统
+- 每个进程都被分配了4GB的虚拟内存，用户程序可使用比实际物理内存更大的地址空间
 
 作者：SylvanasSun
 链接：https://juejin.im/post/59f8691b51882534af254317
@@ -2328,16 +2417,33 @@ https://mp.weixin.qq.com/s?__biz=MzUxODAzNDg4NQ==&mid=2247485033&idx=1&sn=bf9ba7
 
 **页式内存管理的作用是在由段式内存管理所映射而成的的地址上再加上一层地址映射。**
 
-![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkScLhBl6b8h7zMdGJQ30uviaKeonZ3gABkmWghgnlibJw79jib3IOKiaKSA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkScLhBl6b8h7zMdGJQ30uviaKeonZ3gABkmWghgnlibJw79jib3IOKiaKSA/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)进程（执行的程序）占用的用户空间按照「 访问属性一致的地址空间存放在一起 」的原则，划分成 `5`个不同的内存区域。访问属性指的是“可读、可写、可执行等 。
 
-![img](https://mmbiz.qpic.cn/mmbiz_png/J0g14CUwaZfVYxicDjAjl4nMxlmyJk7rkLicVe0iaPt3taOrowrLDwibhmGZsic0H8ic1Dv0Z3EMVtk80qzQOOib2CUew/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+- 代码段
 
-- 程序文件段，包括二进制可执行代码；
-- 已初始化数据段，包括静态常量；
-- 未初始化数据段，包括未初始化的静态变量；
-- 堆段，包括动态分配的内存，从低地址开始向上增长；
-- 文件映射段，包括动态库、共享内存等，从低地址开始向上增长（跟硬件和内核版本有关）
-- 栈段，包括局部变量和函数调用的上下文等。栈的大小是固定的，一般是 `8 MB`。当然系统也提供了参数，以便我们自定义大小；
+  代码段是用来存放可执行文件的操作指令，可执行程序在内存中的镜像。代码段需要防止在运行时被非法修改，所以只准许读取操作，它是不可写的。
+
+- 数据段
+
+  数据段用来存放可执行文件中已初始化全局变量，换句话说就是存放程序静态分配的变量和全局变量。
+
+- BSS段
+
+  `BSS`段包含了程序中未初始化的全局变量，在内存中 `bss` 段全部置零。
+
+- 堆 `heap`
+
+  堆是用于存放进程运行中被动态分配的内存段，它的大小并不固定，可动态扩张或缩减。当进程调用malloc等函数分配内存时，新分配的内存就被动态添加到堆上（堆被扩张）；当利用free等函数释放内存时，被释放的内存从堆中被剔除（堆被缩减）
+
+- 栈 `stack`
+
+  栈是用户存放程序临时创建的局部变量，也就是函数中定义的变量（但不包括 `static` 声明的变量，static意味着在数据段中存放变量）。除此以外，在函数被调用时，其参数也会被压入发起调用的进程栈中，并且待到调用结束后，函数的返回值也会被存放回栈中。由于栈的先进先出特点，所以栈特别方便用来保存/恢复调用现场。从这个意义上讲，我们可以把堆栈看成一个寄存、交换临时数据的内存区。
+
+上述几种内存区域中数据段、`BSS`
+
+ 段、堆通常是被连续存储在内存中，在位置上是连续的，而代码段和栈往往会被独立存放。堆和栈两个区域在 `i386` 体系结构中栈向下扩展、堆向上扩展，相对而生。![img](https://mmbiz.qpic.cn/mmbiz_png/ceNmtYOhbMTz21XD2UcYWtoBBNHjicw024Qh3uzLc6lbiaHd7Oo4WHzdwF5JCksQo0KibDKPBLPO40GHQ74LleMbw/640?wx_fmt=png&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+
 
 ##  Linux进程标准的内存段布局
 
@@ -2628,9 +2734,15 @@ https://cloud.tencent.com/developer/article/1027626
 | 页内地址       | 块内地址       |
 | 页长(页面大小) | 块长（块大小） |
 
+## 几种常见的内存分配算法
 
+https://www.dazhuanlan.com/2020/02/11/5e420adf150c5/?__cf_chl_jschl_tk__=21678d4d9dd93197d04792b5d9c390d40dd087d3-1602403643-0-AXG-QQGBq59SkJtqnVNuhX2Iac360EfKHqFc5MniVzpVzYWe7MmzNrurNWGfe3wmWFxzO6CsPqMzofvTHm3uflYqu1LLZLCMTkuJu8zMwQiINPKbr7NtICDi2fvPNiyJDx18lSu0y7-CFYFHW16iPg-qkXyMqsBlx1-Qsyz6crZXr9K75woDmhU7ySzmxeoemH8hZXxt0hDGtdR-ytnE6HQ_Mq1-mucaHCnBP9hk0JbrqHPPnIlfRVXFYy5oV2nTuMyLw-lqX5fAGnvozoE3idEys_Z6z_1yFPnLWmpN7cWJrbz3g_BysHQfCOnatD6A-A
 
+## kill -9 PIDuan原理
 
+http://zyearn.com/blog/2015/03/22/what-happens-when-you-kill-a-process/
+
+执行`kill -9 <PID>`，进程是怎么知道自己被发送了一个信号的？首先要产生信号，执行kill程序需要一个pid，根据这个pid找到这个进程的task_struct（这个是Linux下表示进程/线程的结构），然后在这个结构体的特定的成员变量里记下这个信号。 这时候信号产生了但还没有被特定的进程处理，叫做Pending signal。 等到下一次CPU调度到这个进程的时候，内核会保证先执行`do\_signal`这个函数看看有没有需要被处理的信号，若有，则处理；若没有，那么就直接继续执行该进程。所以我们看到，在Linux下，信号并不像中断那样有异步行为，而是每次调度到这个进程都是检查一下有没有未处理的信号。
 
 # 设计模式
 
@@ -2822,6 +2934,45 @@ https://developer.aliyun.com/article/726412
 - 非阻塞
 
 调用线程发出请求后，在没有得到结果前，该调用就返回了，整个过程调用线程不会被挂起。
+
+## 32 位和 64 位 CPU 
+
+最主要区别在于一次能计算多少字节数据：
+
+- 32 位 CPU 一次可以计算 4 个字节；
+- 64 位 CPU 一次可以计算 8 个字节；
+
+这里的 32 位和 64 位，通常称为 CPU 的位宽。
+
+之所以 CPU 要这样设计，是为了能计算更大的数值，如果是 8 位的 CPU，那么一次只能计算 1 个字节 `0~255` 范围内的数值，这样就无法一次完成计算 `10000 * 500` ，于是为了能一次计算大数的运算，CPU 需要支持多个 byte 一起计算，所以 CPU 位宽越大，可以计算的数值就越大，比如说 32 位 CPU 能计算的最大整数是`4294967295`。
+
+## 为什么32位系统最大内存是4G
+
+数据是如何通过地址总线传输的呢？其实是通过操作电压，低电压表示 0，高压电压则表示 1。
+
+如果构造了高低高这样的信号，其实就是 101 二进制数据，十进制则表示 5，如果只有一条线路，就意味着每次只能传递 1 bit 的数据，即 0 或 1，那么传输 101 这个数据，就需要 3 次才能传输完成，这样的效率非常低。
+
+这样一位一位传输的方式，称为串行，下一个 bit 必须等待上一个 bit 传输完成才能进行传输。当然，想一次多传一些数据，增加线路即可，这时数据就可以并行传输。
+
+为了避免低效率的串行传输的方式，线路的位宽最好一次就能访问到所有的内存地址。CPU 要想操作的内存地址就需要地址总线，如果地址总线只有 1 条，那每次只能表示 「0 或 1」这两种情况，所以 CPU 一次只能操作 2 个内存地址；如果想要 CPU 操作 4G 的内存，那么就需要 32 条地址总线，因为 `2 ^ 32 = 4G`。
+
+## 64位比32位的优势
+
+对于 64 位 CPU 就可以一次性算出加和两个 64 位数字的结果，因为 64 位 CPU 可以一次读入 64 位的数字，并且 64 位 CPU 内部的逻辑运算单元也支持 64 位数字的计算。
+
+但是并不代表 64 位 CPU 性能比 32 位 CPU 高很多，很少应用需要算超过 32 位的数字，所以**如果计算的数额不超过 32 位数字的情况下，32 位和 64 位 CPU 之间没什么区别的，只有当计算超过 32 位数字的情况下，64 位的优势才能体现出来**。
+
+另外，32 位 CPU 最大只能操作 4GB 内存，就算你装了 8 GB 内存条，也没用。而 64 位 CPU 寻址范围则很大，理论最大的寻址空间为 `2^64`。
+
+## CPU 执行程序的过程如下：
+
+- 第一步，CPU 读取「程序计数器」的值，这个值是指令的内存地址，然后 CPU 的「控制单元」操作「地址总线」指定需要访问的内存地址，接着通知内存设备准备数据，数据准备好后通过「数据总线」将指令数据传给 CPU，CPU 收到内存传来的数据后，将这个指令数据存入到「指令寄存器」。
+- 第二步，CPU 分析「指令寄存器」中的指令，确定指令的类型和参数，如果是计算类型的指令，就把指令交给「逻辑运算单元」运算；如果是存储类型的指令，则交由「控制单元」执行；
+- 第三步，CPU 执行完指令后，「程序计数器」的值自增，表示指向下一条指令。这个自增的大小，由 CPU 的位宽决定，比如 32 位的 CPU，指令是 4 个字节，需要 4 个内存地址存放，因此「程序计数器」的值会自增 4；
+
+简单总结一下就是，一个程序执行的时候，CPU 会根据程序计数器里的内存地址，从内存里面把需要执行的指令读取到指令寄存器里面执行，然后根据指令长度自增，开始顺序读取下一条指令。
+
+CPU 从程序计数器读取指令、到执行、再到下一条指令，这个过程会不断循环，直到程序执行结束，这个不断循环的过程被称为 **CPU 的指令周期**。
 
 # Java
 
@@ -3024,6 +3175,13 @@ https://mp.weixin.qq.com/s/TDw7GnzDw5FK3RWwkIzzZA
 4. CyclicBarrier 可以在最后一个线程达到屏障之前，选择先执行一个操作。
 5. Semaphore ，需要拿到许可才能执行，并可以选择公平和非公平模式。
 
+### 阻塞队列(BlockingQueue)的实现原理
+
+https://blog.csdn.net/chenchaofuck1/article/details/51660119
+
+- 支持阻塞的插入方法：当队列满时，队列会阻塞插入元素的线程，直到队列不满。
+- 支持阻塞的移除方法：当队列为空时，获取元素的线程会等待队列变为非空。
+
 
 
 ## 线程转换关系
@@ -3035,6 +3193,34 @@ https://mp.weixin.qq.com/s/TDw7GnzDw5FK3RWwkIzzZA
 
 
 ## 线程池
+
+### JAVA线程池参数详解
+
+ThreadPoolExecutor(int corePoolSize,
+                              int maximumPoolSize,
+                              long keepAliveTime,
+                              TimeUnit unit,
+                              BlockingQueue<Runnable> workQueue,
+                              ThreadFactory threadFactory,
+                              RejectedExecutionHandler handler) 
+复制代码
+1、corePoolSize核心线程数量
+       线程池内部核心线程数量，如果线程池收到任务，且线程池内部线程数量没有达到corePoolSize，线程池会直接给此任务创建一个新线程来处理此任务。具体是创建一个Work对象，此Work持有此任务Runnable、此线程Thread的引用。最后将此Work放入一个名叫workers的Set集合中。0 =< workers.size <=maximumPoolSize。
+
+2、maximumPoolSize 最大允许线程数量
+       线程池内部线程数量已经达到核心线程数量，即corePoolSize，并且任务队列已满，此时如果继续有任务被提交，将判断线程池内部线程总数是否达到maximumPoolSize，如果小于maximumPoolSize，将继续使用线程工厂创建新线程。如果线程池内线程数量等于maximumPoolSize，就不会继续创建线程，将触发拒绝策略RejectedExecutionHandler。新创建的同样是一个Work对象，并最终放入workers集合中。
+
+3、keepAliveTime、unit 超出线程的存活时间
+       当线程池内部的线程数量大于corePoolSize，则多出来的线程会在keepAliveTime时间之后销毁。
+
+4、workQueue 任务队列
+       线程池需要执行的任务的队列，通常有固定数量的ArrayBlockingQueue，无限制的LinkedBlockingQueue。
+
+5、threadFactory 线程工厂，用于创建线程
+       线程池内初初始没有线程，任务来了之后，会使用线程工厂创建线程。
+
+6、handler 任务拒绝策略
+       当任务队列已满，又有新的任务进来时，会回调此接口。有几种默认实现，通常建议根据具体业务来自行实现。
 
 ### 线程池数量
 
@@ -3203,7 +3389,7 @@ jdk是通过UNSAFE类对堆内存中对象的属性进行直接的读取和写�
 
 当一个类加载器去加载类时先尝试让父类加载器去加载，如果父类加载器加载不了再尝试自身加载。这也是我们在自定义ClassLoader时java官方建议遵守的约定。
 
-双亲委派模型能保证基础类仅加载一次，不会让jvm中存在重名的类。比如String.class，每次加载都委托给父加载器，最终都是BootstrapClassLoader，都保证java核心类都是BootstrapClassLoader加载的，保证了java的安全与稳定性。
+**双亲委派模型能保证基础类仅加载一次，不会让jvm中存在重名的类。比如String.class，每次加载都委托给父加载器，最终都是BootstrapClassLoader，都保证java核心类都是BootstrapClassLoader加载的，保证了java的安全与稳定性。**
 
 自己实现ClassLoader时只需要继承ClassLoader类，然后覆盖findClass（String name）方法即可完成一个带有双亲委派模型的类加载器。
 
@@ -3536,7 +3722,61 @@ https://www.jianshu.com/p/5e952ab2c41b
 
 2、当工作线程数小于核心线程数，那些空闲的核心线程再去队列取任务的时候，如果队列中的Runnable数量为0，就会阻塞当前线程，这样线程就不会回收了
 
+## 动态代理
 
+https://www.zhihu.com/question/20794107	
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/v2-6aacbe1e9df4fe982a68fe142401952e_720w.jpg)
+
+## 泛型缺点
+
+简单说就是擦除后，重载问题
+
+​    List<String>list = new ArrayList<String>();
+
+​    //List<Object>list2 = new ArrayList<String>();
+
+局限性1：
+
+集合等号两边所传递的值必须相同否则会报错，原因就是Java中的泛型有一个擦除的机制，就是所编译器期间编译器认识泛型，但是在运行期间Java虚拟机就不认识泛型了，有兴趣的可以通过反编译来看一下，那么运行期间就会变成Listlist = new ArrayList ();如果最终变成这个样子了，那么传入泛型还有什么意思，所以在程序编译期间就报错，这样泛型就得以应用了（这个实际上是引用c++中的模板没有用好才导致的，Java中用泛型的场景就是写一个通用的方法）。
+
+局限性2：
+
+  现在要写一个比较通用的方法。
+
+​       publicvoid fun1(List<Object> list){
+
+​       System.out.println("泛型方法");
+
+​      }
+
+​    但是在调用的时候传入的String类型变量就会报错
+
+​    publicvoid test2(){
+
+​       List<String>list = new ArrayList<String>();
+
+​       //fun1(list);报错
+
+​    }
+
+原因无他，就是泛型擦除，理由同局限性1，那么怎么办呢？
+
+重载吧！类型变量为String的一个，Integer的一个。     
+
+public void fun1(List<String> list){
+
+​      System.out.println("泛型方法1");
+
+  }
+
+  public void fun1(List<Integer>list){
+
+​      System.out.println("泛型方法2");
+
+   }
+
+这个时候编译器又报错了，为啥呢？还是泛型擦除，当运行的时候会导致，参数都变成List  list，那么这两个方法都变成一个了。
 
 # Mysql
 
@@ -3555,6 +3795,8 @@ https://www.jianshu.com/p/5e952ab2c41b
 MySQL根据优化器生成的执行计划，再调用存储引擎的API来执行查询。
 
 将结果返回给客户端。
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/5148507-ca8930bca4e10d05.png)
 
 ![SQL语句执行过程](README.assets/1652e56415e9a6f4)
 
@@ -3692,6 +3934,24 @@ https://mp.weixin.qq.com/s/Lx4TNPLQzYaknR7D3gmOmQ
 - 如果`redo log`写成功了，而`binlog`写失败了。那从服务器就拿不到最新的数据了。
 
 MySQL通过**两阶段提交**来保证`redo log`和`binlog`的数据是一致的。
+
+### **redo log，为啥还需要binlog呢？**
+
+> 1、redo log的大小是固定的，日志上的记录修改落盘后，日志会被覆盖掉，无法用于数据回滚/数据恢复等操作。
+>  2、redo log是innodb引擎层实现的，并不是所有引擎都有。
+
+- **基于以上，binlog必不可少**
+
+> 1、binlog是server层实现的，意味着所有引擎都可以使用binlog日志
+>  2、binlog通过追加的方式写入的，可通过配置参数max_binlog_size设置每个binlog文件的大小，当文件大小大于给定值后，日志会发生滚动，之后的日志记录到新的文件上。
+>  3、binlog有两种记录模式，statement格式的话是记sql语句， row格式会记录行的内容，记两条，更新前和更新后都有。
+
+
+
+作者：Mr林_月生
+链接：https://www.jianshu.com/p/4bcfffb27ed5
+来源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 
 ## 两种复制方式
 
@@ -3972,14 +4232,6 @@ https://www.zhihu.com/question/24696366/answer/29189700
 
 第三范式（3NF） 3NF在2NF的基础之上，消除了非主属性对于码的传递函数依赖。
 
-### sql 语句在 MySQL 中的执行流程
-
-    连接器： 身份认证和权限相关(登录 MySQL 的时候)。
-    查询缓存: 执行查询语句的时候，会先查询缓存（MySQL 8.0 版本后移除，因为这个功能不太实用）。
-    分析器: 没有命中缓存的话，SQL 语句就会经过分析器，分析器说白了就是要先看你的 SQL 语句要干嘛，再检查你的 SQL 语句语法是否正确。
-    优化器： 按照 MySQL 认为最优的方案去执行。
-    执行器: 执行语句，然后从存储引擎返回数据。
-
 ### 图解MySQL 内连接、外连接、左连接、右连接、全连接
 
 https://blog.csdn.net/plg17/article/details/78758593
@@ -4096,6 +4348,25 @@ drop 语句将删除表的结构被依赖的约束(constrain)、触发器(trigge
 
 2. delete 语句是数据库操作语言(dml)，这个操作会放到 rollback segement 中，事务提交之后才生效；如果有相应的 trigger，执行的时候将被触发。
 truncate、drop 是数据库定义语言(ddl)，操作立即生效，原数据不放到 rollback segment 中，不能回滚，操作不触发 trigger。
+
+## 预编译语句
+
+https://www.cnblogs.com/micrari/p/7112781.html
+
+通常我们的一条sql在db接收到最终执行完毕返回可以分为下面三个过程：
+
+1. 词法和语义解析
+2. 优化sql语句，制定执行计划
+3. 执行并返回结果
+
+我们把这种普通语句称作**Immediate Statements**。
+
+但是很多情况，我们的一条sql语句可能会反复执行，或者每次执行的时候只有个别的值不同（比如query的where子句值不同，update的set子句值不同,insert的values值不同）。
+如果每次都需要经过上面的词法语义解析、语句优化、制定执行计划等，则效率就明显不行了。
+
+所谓预编译语句就是将这类语句中的值用占位符替代，可以视为将sql语句模板化或者说参数化，一般称这类语句叫**Prepared Statements**或者**Parameterized Statements**
+预编译语句的优势在于归纳为：**一次编译、多次运行，省去了解析优化等过程；此外预编译语句能防止sql注入。**
+当然就优化来说，很多时候最优的执行计划不是光靠知道sql语句的模板就能决定了，往往就是需要通过具体值来预估出成本代价。
 
 # Spring
 
@@ -4683,6 +4954,8 @@ class main{
 
 ### kmp
 
+https://www.zhihu.com/question/21923021
+
 ```
 class Solution {
     public int strStr(String haystack, String needle) {
@@ -5179,6 +5452,136 @@ public class Solution {
 
 https://blog.csdn.net/qq_25800311/article/details/81607168?utm_medium=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromMachineLearnPai2-1.add_param_isCf
 
+## 高精度阶乘
+
+由于乘法会超过int甚至long long，所以要用高精度。
+高精度的思路是用数组来存数字的每一位，然后模拟人计算乘法的竖式乘法方法。
+你可以考虑如何计算一个长度为n的数组a乘以一个数x，假设a是从低位到高位存储的（比如数字12345，数组就是a[1]=5,a[2]=4,a[3]=3,a[4]=2,a[5]=1）。
+首先各位就是a[1]*x%10，但是十位是什么呢，应该是(a[2]*x+上一位的进位)%10
+所以这里，c表示的就是上一位的进位，f[j]在循环到j之前表示的是(i-1)!的第j位，循环到j后是i!的第j位。
+
+```
+#include <iostream>
+#include <string.h>
+#include <stdio.h> 
+using namespace std;
+const int maxn = 3000;//3000意指结果最多含3000个数字
+int f[maxn];//结果存储器.下标大的元素对应结果的高位.即f[0]对应结果的个位.
+//每次运行,f[]的每个元素初始值都是0.
+//这里为了便于理解修改成了maxn,且避免与<algorithm>以及<cmath>库中的同名函数重复.
+int main()
+{ 
+    //初始化开始
+    int i,j,n;
+    scanf("%d",&n);
+    f[0]=1;
+    //memset(f,0,sizeof(f)); //f声明在main外头,初始值都为0,不需要memset
+    //初始化结束
+
+    //开始计算阶乘
+    for(i=2;i<=n;i++)//从2乘到n.
+    {
+        int c=0;//进位存储器.
+        for(j=0;j<maxn;j++)//每一位都乘个i.
+        {
+            int s=f[j]*i+c;//f[j]是当前被乘i的那一位上的数字,"+c"是进位;s的值最大是9*9=81,最小是0,不会超过两位数
+            f[j]=s%10;//模10,意在取计算结果个位上的数字,赋值给f[j]
+            c=s/10;//除10,意在取十位上数字.
+            //若无十位上的数字,则c为0;因为c++中,整型除法向0取整(理解起来等价于舍去小数部分),如9/10=0;
+        }
+    }
+    //计算结束
+
+    //输出开始
+    for(j=maxn-1;j>=0;j--)              
+        if(f[j]) break;
+    for(i=j;i>=0;i--)
+        cout<<f[i];
+        /*这两句的意思很简单，假设f[]是这样的：(这边是f[2999]->)0000000...(省略若干个0)...00123123123(<-f[0]在这边)
+         *先从高位开始往低位找，找到第一个不为零的数字，记下标为j,
+         *然后再从j到0依次输出f[]中每一位的值
+         */
+
+    //输出结束
+    return 0;
+}
+
+
+```
+
+## [BitMap](https://www.cnblogs.com/wuhuangdi/p/4126752.html)
+
+https://www.cnblogs.com/wuhuangdi/p/4126752.html#3074215
+
+```
+package com.chs.alg.bitmap;
+
+public class BitMap {
+    //保存数据的
+    private byte[] bits;
+    
+    //能够存储多少数据
+    private int capacity;
+    
+    
+    public BitMap(int capacity){
+        this.capacity = capacity;
+        
+        //1bit能存储8个数据，那么capacity数据需要多少个bit呢，capacity/8+1,右移3位相当于除以8
+        bits = new byte[(capacity >>3 )+1];
+    }
+    
+    public void add(int num){
+        // num/8得到byte[]的index
+        int arrayIndex = num >> 3; 
+        
+        // num%8得到在byte[index]的位置
+        int position = num & 0x07; 
+        
+        //将1左移position后，那个位置自然就是1，然后和以前的数据做|，这样，那个位置就替换成1了。
+        bits[arrayIndex] |= 1 << position; 
+    }
+    
+    public boolean contain(int num){
+        // num/8得到byte[]的index
+        int arrayIndex = num >> 3; 
+        
+        // num%8得到在byte[index]的位置
+        int position = num & 0x07; 
+        
+        //将1左移position后，那个位置自然就是1，然后和以前的数据做&，判断是否为0即可
+        return (bits[arrayIndex] & (1 << position)) !=0; 
+    }
+    
+    public void clear(int num){
+        // num/8得到byte[]的index
+        int arrayIndex = num >> 3; 
+        
+        // num%8得到在byte[index]的位置
+        int position = num & 0x07; 
+        
+        //将1左移position后，那个位置自然就是1，然后对取反，再与当前值做&，即可清除当前的位置了.
+        bits[arrayIndex] &= ~(1 << position); 
+
+    }
+    
+    public static void main(String[] args) {
+        BitMap bitmap = new BitMap(100);
+        bitmap.add(7);
+        System.out.println("插入7成功");
+        
+        boolean isexsit = bitmap.contain(7);
+        System.out.println("7是否存在:"+isexsit);
+        
+        bitmap.clear(7);
+        isexsit = bitmap.contain(7);
+        System.out.println("7是否存在:"+isexsit);
+    }
+}
+```
+
+
+
 # 分布式
 
 ## 分布式事务
@@ -5319,6 +5722,30 @@ https://segmentfault.com/a/1190000022718948
 
 总的来说就是，数据存在的节点越多，分区容忍性越高，但要复制更新的数据就越多，一致性就越难保证。为了保证一致性，更新所有节点数据所需要的时间就越长，可用性就会降低。
 
+## **BASE理论**
+
+BASE是Basically Available（基本可用）、Soft state（软状态）和Eventually consistent（最终一致性）三个短语的缩写。BASE理论是对CAP中一致性和可用性权衡的结果，其来源于对大规模互联网系统分布式实践的总结，是基于CAP定理逐步演化而来的。BASE理论的核心思想是：**即使无法做到强一致性，但每个应用都可以根据自身业务特点，采用适当的方式来使系统达到最终一致性**。接下来看一下BASE中的三要素：
+
+**1、基本可用**
+
+基本可用是指分布式系统在出现不可预知故障的时候，允许损失部分可用性----注意，这绝不等价于系统不可用。比如：
+
+（1）响应时间上的损失。正常情况下，一个在线搜索引擎需要在0.5秒之内返回给用户相应的查询结果，但由于出现故障，查询结果的响应时间增加了1~2秒
+
+（2）系统功能上的损失：正常情况下，在一个电子商务网站上进行购物的时候，消费者几乎能够顺利完成每一笔订单，但是在一些节日大促购物高峰的时候，由于消费者的购物行为激增，为了保护购物系统的稳定性，部分消费者可能会被引导到一个降级页面
+
+**2、软状态**
+
+软状态指允许系统中的数据存在中间状态，并认为该中间状态的存在不会影响系统的整体可用性，即允许系统在不同节点的数据副本之间进行数据同步的过程存在延时
+
+**3、最终一致性**
+
+最终一致性强调的是所有的数据副本，在经过一段时间的同步之后，最终都能够达到一个一致的状态。因此，最终一致性的本质是需要系统保证最终数据能够达到一致，而不需要实时保证系统数据的强一致性。
+
+总的来说，BASE理论面向的是大型高可用可扩展的分布式系统，和传统的事物ACID特性是相反的，**它完全不同于ACID的强一致性模型，而是通过牺牲强一致性来获得可用性，并允许数据在一段时间内是不一致的，但最终达到一致状态**。但同时，在实际的分布式场景中，不同业务单元和组件对数据一致性的要求是不同的，因此在具体的分布式系统架构设计过程中，ACID特性和BASE理论往往又会结合在一起。
+
+ 
+
 ## 分布式系统：向量时钟
 
 https://juejin.im/post/5d1c8988f265da1bb2774d0b
@@ -5379,33 +5806,22 @@ VC的比较是所有对应位置的元素都比对方大，才能认为前者大
 
 ## 内容分发网络（CDN）
 
-[![img](README.assets/h9TAuGI.jpg)](https://github.com/donnemartin/system-design-primer/blob/master/images/h9TAuGI.jpg)
-**[来源：为什么使用 CDN](https://www.creative-artworks.eu/why-use-a-content-delivery-network-cdn/)**
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/v2-53f9745aa6e227d1555a78fedabf9b4d_720w.jpg)
 
-内容分发网络（CDN）是一个全球性的代理服务器分布式网络，它从靠近用户的位置提供内容。通常，HTML/CSS/JS，图片和视频等静态内容由 CDN 提供，虽然亚马逊 CloudFront 等也支持动态内容。CDN 的 DNS 解析会告知客户端连接哪台服务器。
 
-将内容存储在 CDN 上可以从两个方面来提供性能:
 
-- 从靠近用户的数据中心提供资源
-- 通过 CDN 你的服务器不必真的处理请求
+1. 当用户点击网站页面上的内容URL，经过本地DNS系统解析，DNS 系统会最终将域名的解析权交给 [CNAME](https://link.zhihu.com/?target=https%3A//en.wikipedia.org/wiki/CNAME_record) 指向的 CDN 专用 DNS 服务器。
+2. CDN 的 DNS 服务器将 CDN 的全局负载均衡设备 IP 地址返回用户。
+3. 用户向 CDN 的全局负载均衡设备发起内容 URL 访问请求。
+4. CDN 全局负载均衡设备根据用户 IP 地址，以及用户请求的内容URL，选择一台用户所属区域的区域负载均衡设备，告诉用户向这台设备发起请求。
+5. 基于以下这些条件的综合分析之后，区域负载均衡设备会向全局负载均衡设备返回一台缓存服务器的IP地址：
+6. 根据用户 IP 地址，判断哪一台服务器距用户最近；
+7. 根据用户所请求的 URL 中携带的内容名称，判断哪一台服务器上有用户所需内容；
+8. 查询各个服务器当前的负载情况，判断哪一台服务器尚有服务能力。
+9. 全局负载均衡设备把服务器的 IP 地址返回给用户。
+10. 用户向缓存服务器发起请求，缓存服务器响应用户请求，将用户所需内容传送到用户终端。如果这台缓存服务器上并没有用户想要的内容，而区域均衡设备依然将它分配给了用户，那么这台服务器就要向它的上一级缓存服务器请求内容，直至追溯到网站的源服务器将内容拉到本地。
 
-CDN 推送（push）
-
-当你服务器上内容发生变动时，推送 CDN 接受新内容。直接推送给 CDN 并重写 URL 地址以指向你的内容的 CDN 地址。你可以配置内容到期时间及何时更新。内容只有在更改或新增是才推送，流量最小化，但储存最大化。
-
-CDN 拉取（pull）
-
-CDN 拉取是当第一个用户请求该资源时，从服务器上拉取资源。你将内容留在自己的服务器上并重写 URL 指向 CDN 地址。直到内容被缓存在 CDN 上为止，这样请求只会更慢，
-
-[存活时间（TTL）](https://en.wikipedia.org/wiki/Time_to_live)决定缓存多久时间。CDN 拉取方式最小化 CDN 上的储存空间，但如果过期文件并在实际更改之前被拉取，则会导致冗余的流量。
-
-高流量站点使用 CDN 拉取效果不错，因为只有最近请求的内容保存在 CDN 中，流量才能更平衡地分散。
-
-缺陷：CDN
-
-- CDN 成本可能因流量而异，可能在权衡之后你将不会使用 CDN。
-- 如果在 TTL 过期之前更新内容，CDN 缓存内容可能会过时。
-- CDN 需要更改静态内容的 URL 地址以指向 CDN。
+DNS 服务器根据用户 IP 地址，将域名解析成相应节点的缓存服务器IP地址，实现用户就近访问。使用 CDN 服务的网站，只需将其域名解析权交给 CDN 的全局负载均衡（GSLB）设备，将需要分发的内容注入 CDN，就可以实现内容加速了。
 
 ## 反向代理（web 服务器）
 
@@ -5436,7 +5852,7 @@ NGINX 和 HAProxy 等解决方案可以同时支持第七层反向代理和负�
 
 https://zhuanlan.zhihu.com/p/34332329
 
-### 如何设计一个高可用系统？要考虑哪些地方？
+## 如何设计一个高可用系统？要考虑哪些地方？
 
 https://blog.csdn.net/qq_34337272/article/details/104047453
 
@@ -5462,15 +5878,47 @@ https://blog.csdn.net/qq_35906921/article/details/84032874
 1. 直接拒绝，抛出异常，打日志，通知RD时钟回滚。
 2. 利用扩展位，上面我们讨论过不同业务场景位数可能用不到那么多，那么我们可以把扩展位数利用起来了，比如当这个时间回拨比较长的时候，我们可以不需要等待，直接在扩展位加1。2位的扩展位允许我们有3次大的时钟回拨，一般来说就够了，如果其超过三次我们还是选择抛出异常，打日志。-----------------------------简单的说就是换个机器Id
 
-
 作者：咖啡拿铁
 链接：https://juejin.im/post/6844903686271926279
 来源：掘金
 著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
 
+## [接口限流算法：漏桶算法&令牌桶算法](https://segmentfault.com/a/1190000015967922)
+
+https://segmentfault.com/a/1190000015967922
+
+#### 漏桶算法
+
+把请求比作是水，水来了都先放进桶里，并以限定的速度出水，当水来得过猛而出水不够快时就会导致水直接溢出，即拒绝服务。
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/1460000015967925)
+
+漏斗有一个进水口 和 一个出水口，出水口以一定速率出水，并且有一个最大出水速率：
+
+在漏斗中没有水的时候，
+
+- 如果进水速率小于等于最大出水速率，那么，出水速率等于进水速率，此时，不会积水
+- 如果进水速率大于最大出水速率，那么，漏斗以最大速率出水，此时，多余的水会积在漏斗中
+
+在漏斗中有水的时候
+
+- 出水口以最大速率出水
+- 如果漏斗未满，且有进水的话，那么这些水会积在漏斗中
+- 如果漏斗已满，且有进水的话，那么这些水会溢出到漏斗之外
+
+#### 令牌桶算法
+
+对于很多应用场景来说，除了要求能够限制数据的平均传输速率外，还要求允许某种程度的突发传输。这时候漏桶算法可能就不合适了，令牌桶算法更为适合。
+
+令牌桶算法的原理是系统以恒定的速率产生令牌，然后把令牌放到令牌桶中，令牌桶有一个容量，当令牌桶满了的时候，再向其中放令牌，那么多余的令牌会被丢弃；当想要处理一个请求的时候，需要从令牌桶中取出一个令牌，如果此时令牌桶中没有令牌，那么则拒绝该请求。
+
+![img](https://gitee.com/xurunxuan/picgo/raw/master/img/1460000015967925)
+
 # 项目
 
 ## 协同过滤
+
+https://mp.weixin.qq.com/s/B5ekmsBVN1oS77hWOV6Iww
 
 https://www.bilibili.com/video/BV12E411i7ga
 
@@ -5895,6 +6343,38 @@ https://www.infoq.cn/article/2017hongbao-weixin
 \- 通过事务操作串行化保证资金安全，避免出现红包超发、漏发、重复发的情况；
 \- 通过红包ID+循环天双维度分库表规则提升系统性能；
 
+## 如何实现抢红包算法
+
+https://cloud.tencent.com/developer/article/1587563
+
+**二倍均值法**
+
+剩余红包金额为M，剩余人数为N，那么有如下公式：
+
+每次抢到的金额 = 随机区间 **（0， M / N X 2）**
+
+这个公式，保证了**每次随机金额的平均值是相等的**，不会因为抢红包的先后顺序而造成不公平。
+
+举个栗子：
+
+假设有10个人，红包总额100元。
+
+100/10X2 = 20, 所以第一个人的随机范围是**（0，20 )**，平均可以抢到**10元**。
+
+假设第一个人随机到10元，那么剩余金额是100-10 = 90 元。
+
+90/9X2 = 20, 所以第二个人的随机范围同样是**（0，20 )**，平均可以抢到**10元**。
+
+假设第二个人随机到10元，那么剩余金额是90-10 = 80 元。
+
+80/8X2 = 20, 所以第三个人的随机范围同样是**（0，20 )**，平均可以抢到**10元**。
+
+**线段切割法**
+
+何谓线段切割法？我们可以把红包总金额想象成一条很长的线段，而每个人抢到的金额，则是这条主线段所拆分出的若干子线段。
+
+![image-20201008151237918](https://gitee.com/xurunxuan/picgo/raw/master/img/image-20201008151237918.png)
+
 ## 多级缓存的分层架构
 
 https://juejin.im/post/6844903950051721230#comment
@@ -6037,9 +6517,14 @@ https://blog.huangz.me/diary/2016/redis-count-online-users.html
 | HyperLogLog | 无论需要统计的用户有多少，只需要耗费 12 KB 内存，但由于概率算法的特性，只能给出在线人数的估算值，并且也无法获取准确的在线用户名单。 |
 | 位图        | 在尽可能节约内存的情况下，记录在线用户的名单，并且能够对这些名单执行聚合操作。 |
 
+## 服务不可用排查思路
 
+https://www.lagou.com/lgeduarticle/78019.html
 
-
+- 日志很重要，无论是什么服务，一定要记得把日志排在首位
+- 服务器一定要有监控，并且要有监控预警，超过多少，发短信，电话通知。
+- 问题思路排查要有理有据，一步一步来，不能瞎子抓阄似的。
+- 服务挂掉，首先要恢复服务，比如重启等操作
 
 
 
@@ -6309,3 +6794,161 @@ https://cloud.tencent.com/developer/article/1591740
 服务A调用服务B的过程是应用间的内部过程，**牺牲可读性提升效率、易用性是可取的**。基于这种思路，RPC产生了。
 
 简单来说成熟的rpc库相对http容器，更多的是封装了“服务发现”，"负载均衡"，“熔断降级”一类面向服务的高级特性。可以这么理解，rpc框架是面向服务的更高级的封装。
+
+https://mp.weixin.qq.com/s/xkwwAUV9ziabPNUMEr5DPQ
+
+##  说说Dubbo的分层？
+
+从大的范围来说，dubbo分为三层，business业务逻辑层由我们自己来提供接口和实现还有一些配置信息，RPC层就是真正的RPC调用的核心层，封装整个RPC的调用过程、负载均衡、集群容错、代理，remoting则是对网络传输协议和数据转换的封装。
+
+划分到更细的层面，就是图中的10层模式，整个分层依赖由上至下，除开business业务逻辑之外，其他的几层都是SPI机制。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/ibBMVuDfkZUnmqYcY60pNmbWxW01EYSbe5WTfSm0etrwxU3oXeaAeu4x6OhicoPMeVSOfoic00ankhtGxVibYicbuPA/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+## 能说下Dubbo的工作原理吗？
+
+1. 服务启动的时候，provider和consumer根据配置信息，连接到注册中心register，分别向注册中心注册和订阅服务
+2. register根据服务订阅关系，返回provider信息到consumer，同时consumer会把provider信息缓存到本地。如果信息有变更，consumer会收到来自register的推送
+3. consumer生成代理对象，同时根据负载均衡策略，选择一台provider，同时定时向monitor记录接口的调用次数和时间信息
+4. 拿到代理对象之后，consumer通过代理对象发起接口调用
+5. provider收到请求后对数据进行反序列化，然后通过代理调用具体的接口实现
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/ibBMVuDfkZUnmqYcY60pNmbWxW01EYSbeUsCibyAOzMW6bHnMPsoUOEBHe9ZVNb3sQnu0MVrAYPib55rMZ2AlMMcg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+## 为什么要通过代理对象通信？
+
+主要是为了实现接口的透明代理，封装调用细节，让用户可以像调用本地方法一样调用远程方法，同时还可以通过代理实现一些其他的策略，比如：
+
+1、调用的负载均衡策略
+
+2、调用失败、超时、降级和容错机制
+
+3、做一些过滤操作，比如加入缓存、mock数据
+
+4、接口调用数据统计
+
+## 说说服务暴露的流程？
+
+1. 在容器启动的时候，通过ServiceConfig解析标签，创建dubbo标签解析器来解析dubbo的标签，容器创建完成之后，触发ContextRefreshEvent事件回调开始暴露服务
+2. 通过ProxyFactory获取到invoker，invoker包含了需要执行的方法的对象信息和具体的URL地址
+3. 再通过DubboProtocol的实现把包装后的invoker转换成exporter，然后启动服务器server，监听端口
+4. 最后RegistryProtocol保存URL地址和invoker的映射关系，同时注册到服务中心
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/ibBMVuDfkZUnmqYcY60pNmbWxW01EYSbeepGx1CibegWKMty6tcQfWH50kH07H15d6ibwTAzrib0icgoaw9TzFBSqRg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+## 说说服务引用的流程？
+
+服务暴露之后，客户端就要引用服务，然后才是调用的过程。
+
+1. 首先客户端根据配置文件信息从注册中心订阅服务
+
+2. 之后DubboProtocol根据订阅的得到provider地址和接口信息连接到服务端server，开启客户端client，然后创建invoker
+
+3. invoker创建完成之后，通过invoker为服务接口生成代理对象，这个代理对象用于远程调用provider，服务的引用就完成了
+
+   ![img](https://mmbiz.qpic.cn/mmbiz_jpg/ibBMVuDfkZUnmqYcY60pNmbWxW01EYSbex1hL19GwTGKxhXndfE5EU8Q4PticgA52SWZ89y7EzkKee4iawibCiad8YQ/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)
+
+## 有哪些负载均衡策略？
+
+1. 加权随机：假设我们有一组服务器 servers = [A, B, C]，他们对应的权重为 weights = [5, 3, 2]，权重总和为10。现在把这些权重值平铺在一维坐标值上，[0, 5) 区间属于服务器 A，[5, 8) 区间属于服务器 B，[8, 10) 区间属于服务器 C。接下来通过随机数生成器生成一个范围在 [0, 10) 之间的随机数，然后计算这个随机数会落到哪个区间上就可以了。
+2. 最小活跃数：每个服务提供者对应一个活跃数 active，初始情况下，所有服务提供者活跃数均为0。每收到一个请求，活跃数加1，完成请求后则将活跃数减1。在服务运行一段时间后，性能好的服务提供者处理请求的速度更快，因此活跃数下降的也越快，此时这样的服务提供者能够优先获取到新的服务请求。
+3. 一致性hash：通过hash算法，把provider的invoke和随机节点生成hash，并将这个 hash 投射到 [0, 2^32 - 1] 的圆环上，查询的时候根据key进行md5然后进行hash，得到第一个节点的值大于等于当前hash的invoker。
+
+![img](https://mmbiz.qpic.cn/mmbiz_jpg/ibBMVuDfkZUnmqYcY60pNmbWxW01EYSbeqIx4aoPVoQ0mEn0ZWnicgI01U55t6PMj4Q3TakKYHB1jJHg1OhAzEKg/640?wx_fmt=jpeg&tp=webp&wxfrom=5&wx_lazy=1&wx_co=1)图片来自dubbo官方
+
+1. 加权轮询：比如服务器 A、B、C 权重比为 5:2:1，那么在8次请求中，服务器 A 将收到其中的5次请求，服务器 B 会收到其中的2次请求，服务器 C 则收到其中的1次请求。
+
+## 集群容错方式有哪些？
+
+1. Failover Cluster失败自动切换：dubbo的默认容错方案，当调用失败时自动切换到其他可用的节点，具体的重试次数和间隔时间可用通过引用服务的时候配置，默认重试次数为1也就是只调用一次。
+2. Failback Cluster快速失败：在调用失败，记录日志和调用信息，然后返回空结果给consumer，并且通过定时任务每隔5秒对失败的调用进行重试
+3. Failfast Cluster失败自动恢复：只会调用一次，失败后立刻抛出异常
+4. Failsafe Cluster失败安全：调用出现异常，记录日志不抛出，返回空结果
+5. Forking Cluster并行调用多个服务提供者：通过线程池创建多个线程，并发调用多个provider，结果保存到阻塞队列，只要有一个provider成功返回了结果，就会立刻返回结果
+6. Broadcast Cluster广播模式：逐个调用每个provider，如果其中一台报错，在循环调用结束后，抛出异常。
+
+## 了解Dubbo SPI机制吗？
+
+SPI 全称为 Service Provider Interface，是一种服务发现机制，本质是将接口实现类的全限定名配置在文件中，并由服务加载器读取配置文件，加载实现类，这样可以在运行时，动态为接口替换实现类。
+
+Dubbo也正是通过SPI机制实现了众多的扩展功能，而且dubbo没有使用java原生的SPI机制，而是对齐进行了增强和改进。
+
+SPI在dubbo应用很多，包括协议扩展、集群扩展、路由扩展、序列化扩展等等。
+
+使用方式可以在META-INF/dubbo目录下配置：
+
+```
+key=com.xxx.value
+```
+
+然后通过dubbo的ExtensionLoader按照指定的key加载对应的实现类，这样做的好处就是可以按需加载，性能上得到优化。
+
+## 如果让你实现一个RPC框架怎么设计？
+
+1. 首先需要一个服务注册中心，这样consumer和provider才能去注册和订阅服务
+2. 需要负载均衡的机制来决定consumer如何调用客户端，这其中还当然要包含容错和重试的机制
+3. 需要通信协议和工具框架，比如通过http或者rmi的协议通信，然后再根据协议选择使用什么框架和工具来进行通信，当然，数据的传输序列化要考虑
+4. 除了基本的要素之外，像一些监控、配置管理页面、日志是额外的优化考虑因素。
+
+# ZooKeeper
+
+## 解决的问题
+
+分布式数据一致性
+
+
+
+## 使用场景
+
+1.数据的订阅和发布
+
+配置中心
+
+2.软负载均衡
+
+3.命名服务
+
+全局id
+
+## 原子操作
+
+![img](README.assets/企业微信截图_15928841848073.png)
+
+每个节点都有版本号，所以原子操作是通过CAS,当然也可以加锁，如果是加锁version就是-1
+
+## Watcher
+
+![img](README.assets/企业微信截图_15928844214716.png)
+
+## Zookeeper——一致性协议:Zab协议
+
+https://www.jianshu.com/p/2bceacd60b8a
+
+Zab 协议如何保证数据一致性
+
+假设两种异常情况：
+ 1、一个事务在 Leader 上提交了，并且过半的 Folower 都响应 Ack 了，但是 Leader 在 Commit 消息发出之前挂了。
+ 2、假设一个事务在 Leader 提出之后，Leader 挂了。
+
+要确保如果发生上述两种情况，数据还能保持一致性，那么 Zab 协议选举算法必须满足以下要求：
+
+**Zab 协议崩溃恢复要求满足以下两个要求**：
+ 1）**确保已经被 Leader 提交的 Proposal 必须最终被所有的 Follower 服务器提交**。
+ 2）**确保丢弃已经被 Leader 提出的但是没有被提交的 Proposal**。
+
+根据上述要求
+ Zab协议需要保证选举出来的Leader需要满足以下条件：
+ 1）**新选举出来的 Leader 不能包含未提交的 Proposal** 。
+ 即新选举的 Leader 必须都是已经提交了 Proposal 的 Follower 服务器节点。
+ 2）**新选举的 Leader 节点中含有最大的 zxid** 。
+ 这样做的好处是可以避免 Leader 服务器检查 Proposal 的提交和丢弃工作。
+
+
+
+作者：_Zy
+链接：https://www.jianshu.com/p/2bceacd60b8a
+来源：简书
+著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
+
+
+
